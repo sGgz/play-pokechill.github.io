@@ -1,0 +1,55 @@
+# PokeChill 私人云存档实现
+
+参考仓库 `sGgz/pokeclicker` 的远程默认主干 `origin/develop`，参考提交 `d84f147409454c3640766b39f7d1444237f92430`。新游戏基于 Fork 的 `main`，实现分支为 `codex/cloud-save`。
+
+## 架构与范围
+
+浏览器本地 JSON → IndexedDB 同步状态 / 恢复副本 → 同域 Cloudflare API → GitHub 私有仓库 `saves/<slot>.json`。
+
+复用主干的签名 Cookie、7 天会话、随机密码、原生登录限流、Origin 校验、GitHub UTF-8 编解码与原生 workerd fetch、blob SHA + revision 条件写入、不可变请求重试、恢复日志和同步状态机。认证 audience、Cookie、锁、数据库、Worker 和槽位均独立。
+
+PokeChill 云档 payload 为 `{ gameId: 'pokechill', gameData: 原版JSON }`，保留 saved、team、宝可梦、道具、商店和区域字段。协议禁止其他游戏 payload，验证版本、首次开局标记、时间、层级、大小、危险属性和哈希。版本从原版 `saved.version` 识别，客户端构建标识从源码计算。
+
+网站全站经过登录门禁，包括静态资源和存档 API。GitHub token 与密码校验值只存 Worker Secret。个人单槽位、单游戏密码，不提供多人账号注册、排行榜、服务器模拟或桌面客户端。
+
+## 接入点
+
+- `scripts/save.js`：本地保存后采集快照；导入转为校验 + 恢复日志；重置不再清空同域全部 localStorage。
+- `scripts/explore.js`：启动前等待云档决策；游戏循环在换设备暂停后停止推进。
+- `index.html`：加载云模块；选择初始宝可梦后立即保存。
+- `cloud-save/browser.ts`：面板、启动恢复、冲突选择、自动同步、退避、换设备确认、导出和登录协调。
+- `cloud-save/SyncEngine.ts`：沿用主干的不可变请求和持久化顺序；网络结果不确定时重试同一个 snapshotId。
+- `cloud-save/storage.ts`：单个 gameData 原格式 JSON；恢复前备份，安装日志持久化，最多 30 条副本。
+- `cloud-save-worker/src/`：登录、静态资源门禁、存档 API、GitHub 存储。
+- `tools/build.mjs`：只收集游戏公开资产，生成云模块与 build-info；Windows 重名图片兼容映射。
+- `scripts/PR/updateCheck.js`：检查本站构建，不跟随上游仓库。
+
+启动在运行游戏和结算离线收益之前检查本地与云端。没有本地档时恢复云档；本地等于同步基线而云端已更新时恢复；双方均有变化时让用户选择。网络错误允许用户明确继续本地模式。运行中安装档会先保留快照和日志，阻止旧内存继续保存，然后重载。
+
+“同步后换设备”暂停游戏循环与游戏输入，再确认最新快照；若先前有不确定上传，会重试旧请求，必要时等待写入间隔后提交最新捕获，确认完成后保持暂停。关闭页面只尝试同步保存本地，不伪造云端回执。
+
+## 构建与验证
+
+要求 Node.js 24；`npm run verify` 执行类型检查、JavaScript 语法和入口检查、56 项自动测试、生产构建、Wrangler dry-run。测试覆盖登录门禁、会话与来源、登录限流、UTF-8、并发创建、旧基线冲突、丢回执重试、较旧版本拒绝、GitHub 故障区分、真实 workerd 出站边界、备份转换、配置和密码脚本、PokeChill payload 校验、恢复重放、容量失败、副本数量上限和自动同步复选框的状态持久化。
+
+真实浏览器验收使用 Playwright CLI 和独立临时浏览器资料。`test/browser-fixture.ts` 在 `127.0.0.1:3001` 提供真实 API handler + 内存假存储，硬编码测试凭据、没有 GitHub 出站调用，不读取用户真实进度。运行前先 build，再执行 `node --import tsx test/browser-fixture.ts`。仅用于本机验收，构建不会复制此文件。
+
+实现不生成真实密码，不录入 token，不部署 Cloudflare，也不写入 `pokechill-save`。部署配置与真实双设备验收按 [操作手册](cloud-save-deployment.md) 完成；本地假存储通过不代表真实账号已经配置成功。
+
+### 2026-10-09 验收记录
+
+完整 `npm run verify` 在 Node.js `v24.19.0` 下通过：56 项测试成功，类型与脚本检查成功，生产构建成功，Wrangler dry-run 成功。`git diff --check` 通过。
+
+| 浏览器场景 | 实际结果 |
+| --- | --- |
+| 新开局选择初始宝可梦 | 立即生成本地存档，可以上传 |
+| 上传与换设备 | 收到云端确认后保持暂停，阻止继续推进和保存 |
+| 独立浏览器首次打开 | 在游戏启动前恢复云档，宝可梦与已有进度保留 |
+| 自动同步开关 | 打开和关闭均正确持久化；已增加自动回归测试 |
+| 两端各自修改后刷新 | 出现冲突选择，游戏等待决定；选择云档后恢复运行 |
+| 同一浏览器第二个标签 | 阻止重复写入，主标签保持可用 |
+| 原格式 JSON 导入 | 导入后重载完成，恢复日志清除，中文及 emoji 昵称保留 |
+| 本地 JSON 与恢复包导出 | 浏览器实际下载成功；恢复包含 4 条副本，恢复脚本成功生成 6 份原格式存档 |
+| 手机宽度布局 | 在 390 × 844 视口检查，云面板与操作按钮可用 |
+
+上述浏览器验收使用本机内存假存储，生产静态资源与真实 API handler；真实 GitHub token、Cloudflare 账号、域名和密码仍需按操作手册配置，并完成线上双设备验收。测试下载和浏览器资料目录被 Git 忽略，不随网站发布。

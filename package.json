@@ -1,0 +1,37 @@
+{
+  "name": "pokechill-private-cloud",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "dev": "npm run build && node tools/serve.mjs",
+    "check": "tsc --noEmit && node tools/check.mjs",
+    "test": "node --import tsx --test cloud-save-worker/test/*.test.ts test/*.test.ts",
+    "verify": "npm run check && npm test && npm run build && npm run cloud:check",
+    "cloud:setup": "node cloud-save-worker/scripts/setup.mjs",
+    "cloud:login": "wrangler login",
+    "cloud:check": "wrangler deploy --dry-run --config cloud-save-worker/wrangler.jsonc",
+    "cloud:deploy": "npm run build && wrangler deploy --config cloud-save-worker/wrangler.local.json",
+    "cloud:secret": "wrangler secret put GITHUB_SAVE_TOKEN --config cloud-save-worker/wrangler.local.json",
+    "cloud:password": "node cloud-save-worker/scripts/password.mjs",
+    "cloud:recover": "node cloud-save-worker/scripts/recover.mjs"
+  },
+  "dependencies": {
+    "jose": "^6.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "0.28.2",
+    "fake-indexeddb": "^6.2.5",
+    "miniflare": "5.20260918.0-alpha",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "wrangler": "^4.34.0",
+    "@playwright/cli": "^0.1.0",
+    "jsdom": "^25.0.1"
+  }
+}

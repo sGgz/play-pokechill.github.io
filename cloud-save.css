@@ -1,0 +1,68 @@
+.pc-cloud {
+    --cloud-bg: #292821;
+    --cloud-border: #82785a;
+    --cloud-text: #f4e9ca;
+    --cloud-accent: #ffe15e;
+    position: fixed;
+    right: 12px;
+    top: 12px;
+    z-index: 10001;
+    color: var(--cloud-text);
+    font-size: 14px;
+    line-height: 1.6;
+    letter-spacing: 0;
+}
+.pc-cloud summary {
+    cursor: pointer;
+    background: var(--cloud-bg);
+    border: 1px solid var(--cloud-border);
+    border-radius: 6px;
+    padding: 7px 13px;
+    font-size: 14px;
+}
+.pc-cloud[open] { width: min(430px, calc(100vw - 24px)); }
+.pc-cloud__body {
+    background: var(--cloud-bg);
+    border: 1px solid var(--cloud-border);
+    border-radius: 6px;
+    padding: 18px;
+    margin-top: 6px;
+    max-height: calc(100dvh - 80px);
+    overflow-y: auto;
+}
+.pc-cloud h2 { font-size: 20px; color: var(--cloud-accent); margin-bottom: 6px; }
+.pc-cloud p { margin: 8px 0; letter-spacing: 0; }
+.pc-cloud__status { padding: 10px; border-left: 3px solid var(--cloud-accent); background: #37352c; }
+.pc-cloud__actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+.pc-cloud button, .pc-cloud a {
+    color: var(--cloud-text);
+    border: 1px solid var(--cloud-border);
+    background: #444138;
+    padding: 9px 12px;
+    min-height: 42px;
+    border-radius: 5px;
+    cursor: pointer;
+    text-decoration: none;
+    font-size: 14px;
+    letter-spacing: 0;
+}
+.pc-cloud button[data-action="sync"], .pc-cloud button[data-action="handoff"] {
+    background: var(--cloud-accent);
+    color: var(--cloud-bg);
+    border-color: var(--cloud-accent);
+}
+.pc-cloud button:disabled { opacity: 0.45; cursor: default; }
+.pc-cloud button:hover:enabled, .pc-cloud a:hover { filter: brightness(1.12); }
+.pc-cloud :focus-visible { outline: 2px solid var(--cloud-accent); outline-offset: 3px; }
+.pc-cloud label { display: flex; align-items: center; gap: 9px; letter-spacing: 0; cursor: pointer; }
+.pc-cloud input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--cloud-accent); }
+.pc-cloud__conflict { border: 1px solid var(--cloud-accent); padding: 12px; margin-top: 15px; }
+.pc-cloud [hidden] { display: none; }
+.pc-cloud__time { color: #d1c4a1; font-size: 12px; }
+.pc-cloud__body p, .pc-cloud__body span { user-select: text; -webkit-user-select: text; }
+@media (max-width: 640px) {
+    .pc-cloud { right: 8px; top: 8px; }
+    .pc-cloud[open] { width: calc(100vw - 16px); }
+    .pc-cloud summary { padding: 5px 10px; }
+    .pc-cloud__body { padding: 14px; }
+}

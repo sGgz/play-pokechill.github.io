@@ -1,0 +1,38 @@
+{
+    "$schema": "../node_modules/wrangler/config-schema.json",
+    "name": "pokechill-cloud-save",
+    "main": "src/index.ts",
+    "compatibility_date": "2026-09-20",
+    "workers_dev": false,
+    "preview_urls": false,
+    "assets": {
+        "directory": "../dist",
+        "binding": "ASSETS",
+        "run_worker_first": true
+    },
+    "ratelimits": [
+        {
+            "name": "LOGIN_RATE_LIMITER",
+            "namespace_id": "1101",
+            "simple": {
+                "limit": 5,
+                "period": 60
+            }
+        },
+        {
+            "name": "LOGIN_GLOBAL_LIMITER",
+            "namespace_id": "1102",
+            "simple": {
+                "limit": 20,
+                "period": 60
+            }
+        }
+    ],
+    "vars": {
+        "GITHUB_OWNER": "sGgz",
+        "GITHUB_SAVE_REPO": "pokechill-save",
+        "GITHUB_SAVE_BRANCH": "main",
+        "CLOUD_SLOT_ID": "",
+        "ALLOWED_ORIGIN": ""
+    }
+}

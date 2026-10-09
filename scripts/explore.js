@@ -2174,6 +2174,7 @@ const MAX_STEPS_PER_FRAME = 5000;
 
 
 function gameLoop(now) {
+    if (window.PokeChillCloud && !window.PokeChillCloud.canRun()) { requestAnimationFrame(gameLoop); return; }
     let delta = now - lastDeltaTime;
     lastDeltaTime = now;
 
@@ -7506,6 +7507,7 @@ let afkSeconds = 0;
 let afkSecondsGenetics = 0;
 
 function loop() {
+    if (window.PokeChillCloud && !window.PokeChillCloud.canRun()) { requestAnimationFrame(loop); return; }
     const timeNow = Date.now();
     const elapsed = (timeNow - saved.lastFrameRecorded) / 1000;
     saved.lastFrameRecorded = timeNow;
@@ -10509,7 +10511,8 @@ window.addEventListener('beforeunload', function(event) {
 
 
 
-window.addEventListener('load', function() {
+window.addEventListener('load', async function() {
+    if (window.PokeChillCloud) await window.PokeChillCloud.bootstrap();
 
 
     
@@ -10587,4 +10590,5 @@ window.addEventListener('load', function() {
 
     if (saved.arenaCard1 == undefined) createArenaCards()
     //updateTeamExp()
+    window.PokeChillCloud?.started();
 });

@@ -9,6 +9,8 @@
 
 
 
+    <meta name="pokechill-build" content="development">
+    <link rel="stylesheet" href="cloud-save.css">
 </head>
 <body>
 
@@ -543,15 +545,15 @@
 
         <div class="starter-list">
 
-            <div data-pkmn="litten" onClick="document.getElementById('starter-menu').style.pointerEvents = 'none'; item.charcoal.got++; givePkmn(pkmn.litten,10); voidAnimation('starter-menu','tooltipBoxAppear 0.2s 1 reverse'); setTimeout(() => { document.getElementById('starter-menu').style.display = 'none' }, 150); ">
+            <div data-pkmn="litten" onClick="document.getElementById('starter-menu').style.pointerEvents = 'none'; item.charcoal.got++; givePkmn(pkmn.litten,10); saved.firstTimePlaying = false; saveGame(); voidAnimation('starter-menu','tooltipBoxAppear 0.2s 1 reverse'); setTimeout(() => { document.getElementById('starter-menu').style.display = 'none' }, 150); ">
                 <img src="img/pkmn/sprite/litten.png">Litten<br>Fire Type
             </div>
 
-            <div data-pkmn="turtwig" onClick="document.getElementById('starter-menu').style.pointerEvents = 'none'; item.miracleSeed.got++; givePkmn(pkmn.turtwig,10); voidAnimation('starter-menu','tooltipBoxAppear 0.2s 1 reverse'); setTimeout(() => { document.getElementById('starter-menu').style.display = 'none' }, 150); ">
+            <div data-pkmn="turtwig" onClick="document.getElementById('starter-menu').style.pointerEvents = 'none'; item.miracleSeed.got++; givePkmn(pkmn.turtwig,10); saved.firstTimePlaying = false; saveGame(); voidAnimation('starter-menu','tooltipBoxAppear 0.2s 1 reverse'); setTimeout(() => { document.getElementById('starter-menu').style.display = 'none' }, 150); ">
                 <img src="img/pkmn/sprite/turtwig.png">Turtwig<br>Grass Type
             </div>
 
-            <div data-pkmn="froakie" onClick="document.getElementById('starter-menu').style.pointerEvents = 'none'; item.mysticWater.got++; givePkmn(pkmn.froakie,10); voidAnimation('starter-menu','tooltipBoxAppear 0.2s 1 reverse'); setTimeout(() => { document.getElementById('starter-menu').style.display = 'none' }, 150); ">
+            <div data-pkmn="froakie" onClick="document.getElementById('starter-menu').style.pointerEvents = 'none'; item.mysticWater.got++; givePkmn(pkmn.froakie,10); saved.firstTimePlaying = false; saveGame(); voidAnimation('starter-menu','tooltipBoxAppear 0.2s 1 reverse'); setTimeout(() => { document.getElementById('starter-menu').style.display = 'none' }, 150); ">
                 <img src="img/pkmn/sprite/froakie.png">Froakie<br>Water Type
             </div>
 
@@ -1733,6 +1735,7 @@ Game Guide
     <script src="scripts/decor.js"></script>
 
     <script src="scripts/save.js"></script>
+    <script src="scripts/cloud-save.js"></script>
 </body>
 </html>
 

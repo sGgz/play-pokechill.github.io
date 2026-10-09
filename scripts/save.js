@@ -2,6 +2,7 @@ saved.firstTimePlaying = true //esta flag se tiene que quitar cuando seleccione 
 
 
 function saveGame() {
+  if (window.PokeChillCloud && !window.PokeChillCloud.canSave()) return;
   if (saved.firstTimePlaying == true) return //scary!
   let data = {};
 
@@ -79,6 +80,7 @@ function saveGame() {
   }
 
   localStorage.setItem("gameData", JSON.stringify(data));
+  window.PokeChillCloud?.afterLocalSave(JSON.stringify(data));
 }
 
 // ---- CARGAR ----
@@ -165,6 +167,7 @@ function loadGame() {
 
 
 function exportData() {
+  saveGame();
   const raw = localStorage.getItem("gameData");
   if (!raw) return;
 
@@ -189,9 +192,10 @@ function importData() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const data = JSON.parse(reader.result);
+        if (window.PokeChillCloud) { await window.PokeChillCloud.importData(data); return; }
         localStorage.setItem("gameData", JSON.stringify(data));
 
         loadGame();
@@ -224,7 +228,7 @@ function exportToText() {
   return raw;
 }
 
-function loadFromText() {
+async function loadFromText() {
   const input = document.getElementById("text-data-raw");
   if (!input) {
     alert("Element with id 'text-data-raw' not found");
@@ -239,6 +243,7 @@ function loadFromText() {
 
   try {
     const data = JSON.parse(jsonData);
+    if (window.PokeChillCloud) { await window.PokeChillCloud.importData(data); return; }
     localStorage.setItem("gameData", JSON.stringify(data));
     loadGame();
     window.location.reload();
@@ -331,6 +336,7 @@ document.addEventListener("keydown", (ev) => {
 });
 
 function clearData() {
-  localStorage.clear();
+  if (window.PokeChillCloud) { void window.PokeChillCloud.reset(); return; }
+  localStorage.removeItem("gameData");
   window.location.reload();
 }
