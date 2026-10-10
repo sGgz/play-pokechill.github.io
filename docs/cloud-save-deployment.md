@@ -6,11 +6,61 @@
 
 这套方案沿用 PokéClicker 主干的 Cloudflare + GitHub 云存档设计。游戏、Cookie、浏览器备份数据库、Worker 名称和云槽位均独立。PokeChill 与 PokéClicker 的存档格式互不兼容。
 
+## 已有站点升级多玩家（2026-10-10）
+
+新版参考 Click 最新的私有 Git 玩家注册表：每位玩家有自己的密码、玩家 ID、云槽位和本地进度；最多 20 人，由主玩家管理。多个人可以在不同设备或浏览器配置中分别玩，属于各自的单机进度，不合并数值。仓库拥有者能看到全部云档，本方案不对仓库拥有者加密保密。
+
+如果已有单人部署，保留本机 `cloud-save-worker/wrangler.local.json`、`CLOUD_SLOT_ID`、仓库、分支与 GitHub token。**不要重跑 setup 生成新槽位，也不要生成新主玩家密码来代替迁移。** 若还未部署，先按下文完成首次部署和单人密码设置，再执行这里的 `init`。
+
+1. 在旧页面导出本地进度，完成同步并确认；关闭所有旧游戏页面。切换使用新版源码的 `codex/multi-player-cloud-save` 分支，恢复原本机部署配置。
+2. 使用 Node.js 24 安装依赖、检查并发布：
+
+   ```bash
+   npm ci
+   npm run verify
+   npm run cloud:deploy
+   ```
+
+3. 在本机交互终端执行以下命令，隐藏输入原来的主玩家游戏密码，再按提示确认迁移：
+
+   ```bash
+   npm run cloud:players -- init
+   npm run cloud:players -- list
+   ```
+
+   `init` 将线上 Secret 中的玩家配置迁到私有存档仓库的 `config/players.json`，再将 `GAME_AUTH` 改为 version 3 签名主密钥。原密码、ID、槽位、存档内容保持不变；所有设备重新登录。第二条命令用于核对迁移结果。迁移中断可以用原密码重试 `init`，已启用时不会重复换密钥；若提示仓库已有不同配置，应核对恢复迁移状态，不要删除文件或更换槽位。
+
+4. 按需管理玩家，每次均用主玩家密码授权：
+
+   ```bash
+   npm run cloud:players -- add
+   npm run cloud:players -- list
+   npm run cloud:players -- reset
+   ```
+
+   `add` 询问显示名称，为新玩家生成独立 ID、槽位和随机密码；只有远端更新确认成功后才显示密码，保存到密码管理器。`reset` 先列出玩家，询问要重置的玩家 ID，仅撤销该人的旧会话；原进度和其他玩家保持不变。新增与重置直接更新远端配置，通常最多 15 秒生效，无需重部署。没有本地玩家注册表或 `apply` 步骤。
+
+**Git Bash 和 Node 版本：** 若当前终端是 Node 25，而本机已有 `D:\tools\node24`，在 Git Bash 使用 `export PATH=/d/tools/node24:$PATH`，然后 `node --version` 确认为 24 再运行命令。隐藏密码输入需要真实终端；mintty 可用 `winpty node cloud-save-worker/scripts/players.mjs init`，或在配置好 Node 24 的 CMD 中执行 `npm run cloud:players -- init`。其他子命令同理。密码不要放在命令参数、环境变量、日志或聊天里。
+
+**同浏览器换账号：** 在新标签页登录另一人的密码，再回原游戏点击“检查连接”。游戏会暂停并保存原玩家本地进度，装载新玩家数据后重新加载。首次登录新玩家，本地没有进度时恢复其云档或开始新游戏。主玩家的旧本地存档和同步记录继续保留；切回原密码可继续原进度。一个浏览器的同域标签共用登录状态，写入锁只允许一个游戏页面运行。断网或登录过期时，明确继续本地游戏只使用最近选中的玩家；联网后重新检查身份才允许同步。
+
+**普通玩家丢失密码：** 主玩家运行 `npm run cloud:players -- reset`，选择其 ID，保存并交给对应玩家新密码。不要运行 `cloud:password`；新版会阻止它覆盖远端签名主密钥。
+
+**主玩家密码也丢失：** 使用你仍拥有的私有存档仓库写入权限恢复。先保留 `config/players.json` 当前提交记录，在本机 Git Bash 的项目根目录运行下列命令，仅在自己的终端生成新凭证：
+
+```bash
+node --input-type=module -e 'import { createGameCredentials } from "./cloud-save-worker/scripts/password.mjs"; import { randomUUID } from "node:crypto"; const { password, auth } = createGameCredentials(); console.log(JSON.stringify({ password, passwordHash: auth.passwordHash, credentialVersion: randomUUID() }, null, 2));'
+```
+
+把 `password` 保存到密码管理器。在私有仓库配置分支的最新 `config/players.json` 中，只替换 `id` 为 `player` 的 `passwordHash` 与 `credentialVersion`，保留其名称、ID、槽位、其他玩家和顶层结构；不要提交明文密码。作为新提交保存，若文件期间被修改，重新读取最新版再改这两个字段，不强制推送或回退整份配置。最多等 15 秒后用新密码登录并执行 `players list` 核对。无需改 Secret 或重新部署，其他玩家会话保留。
+
+验收时先分别登录两个人，确认面板显示正确玩家名称、主玩家原进度保留、新玩家不会看到主玩家档；各自上传后换独立浏览器恢复，再在同一浏览器往返切换。存储空间不足时先导出恢复包，释放空间后刷新，让切换日志重放；切换未完成期间游戏不会继续写入。
+
 ## 1. 先认清两个仓库与分支
 
 | 项目 | 用途 | 配置 |
 | --- | --- | --- |
-| `sGgz/play-pokechill.github.io` | 游戏源码和部署工具 | 当前实现位于 `codex/cloud-save` 分支 |
+| `sGgz/play-pokechill.github.io` | 游戏源码和部署工具 | 当前实现位于 `codex/multi-player-cloud-save` 分支 |
 | `sGgz/pokechill-save` | 你的真实游戏进度 | 必须是私有仓库；本手册使用 `main` 分支 |
 | `pokechill-cloud-save` | 新 Cloudflare Worker | 与既有 `pokeclicker-cloud-save` 分开 |
 | `game.example.com` | 新游戏入口 | 示例，请按自己的域名填写 |
@@ -40,7 +90,7 @@ D:\work\code\tideng_worktree_dir\c770\play-pokechill.github.io
 
 ```cmd
 cd /d D:\work\code\tideng_worktree_dir\c770\play-pokechill.github.io
-git switch codex/cloud-save
+git switch codex/multi-player-cloud-save
 npm ci
 npm run verify
 ```
@@ -48,7 +98,7 @@ npm run verify
 在另一台部署电脑上从 Fork 取得同一分支：
 
 ```cmd
-git clone --branch codex/cloud-save git@github.com:sGgz/play-pokechill.github.io.git
+git clone --branch codex/multi-player-cloud-save git@github.com:sGgz/play-pokechill.github.io.git
 cd play-pokechill.github.io
 npm ci
 npm run verify
@@ -240,7 +290,9 @@ Wrangler 属于项目的开发依赖，部署电脑也需要安装；`--include=
 
 | 提示或现象 | 处理方法 |
 | --- | --- |
-| `AUTH_CONFIGURATION` | 对新 Worker 执行 `npm run cloud:password`，确认上传成功 |
+| `AUTH_CONFIGURATION` | 首次单人部署执行 `cloud:password`；已有远端模式需恢复正确的签名 Secret，不重置全部玩家 |
+| `PLAYERS_MISSING` / `PLAYERS_CONFIGURATION` | 从私有仓库历史恢复有效 `config/players.json`，保留玩家 ID 与槽位；不要重新初始化覆盖 |
+| `PLAYERS_CONFLICT` | 玩家配置已变化，重新 `list` 后再操作；迁移时核对既有配置 |
 | `CONFIGURATION` | 检查本机配置、仓库名和 token Secret；重新部署 |
 | `GITHUB_CONFIGURATION` | 确认 `pokechill-save` 已有 `main`，token 选中了该私有仓库 |
 | `GITHUB_AUTH` | token 到期或权限不足；重新生成 Contents Read and write token，执行 `cloud:secret` |
@@ -253,6 +305,6 @@ Wrangler 属于项目的开发依赖，部署电脑也需要安装；`--include=
 | `npm` 报 Node 主版本不符 | 确认 cmd 中 `node --version` 是 24，再重新安装依赖 |
 | 自定义域名部署失败 | 确认根域在当前 Cloudflare 账号中为 Active，子域名未绑定其他服务 |
 
-忘记游戏密码：在部署电脑运行 `npm run cloud:password`，生成并保存新密码。所有旧登录失效，但云档保留。
+忘记游戏密码：远端玩家模式按本文开头的普通玩家或主玩家恢复步骤处理。尚未启用远端注册表的单人站点运行 `npm run cloud:password` 生成新密码；所有旧登录失效，云档保留。
 
 token 轮换：新建 token → 运行 `npm run cloud:secret` → 游戏里检查连接和同步 → 再撤销旧 token。不要轮换现有 PokéClicker Worker 的 Secret。

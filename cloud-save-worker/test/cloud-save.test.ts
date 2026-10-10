@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createHandler, type Env } from '../src/index';
-import { SESSION_COOKIE } from '../src/auth';
+import { SESSION_COOKIE, players } from '../src/auth';
 import { ApiError, GithubStore } from '../src/github';
 import { hashPayload, validateRemote, type CloudSaveEnvelope, type RemoteSave, type SavePayload, type UploadRequest } from '../../cloud-save/protocol';
 import { SyncEngine, decideStartup } from '../../cloud-save/SyncEngine';
@@ -46,7 +46,7 @@ class MemoryGithub {
 }
 function service(store = new MemoryGithub()) {
     let now = Date.now();
-    return { store, advance: () => { now += 20000; }, handler: createHandler({ authenticate: async () => {}, store: () => store, now: () => now }) };
+    return { store, advance: () => { now += 20000; }, handler: createHandler({ authenticate: async (_token, config) => players(config)[0], store: () => store, now: () => now }) };
 }
 
 test('API creates a Unicode snapshot and returns a verifiable receipt', async () => {
@@ -175,7 +175,7 @@ test('GitHub permission errors are distinguished from browser login errors', asy
 test('GitHub validation errors without a changed file are not misreported as data conflicts', async () => {
     const backing = new MemoryGithub();
     const handler = createHandler({
-        authenticate: async () => {},
+        authenticate: async (_token, config) => players(config)[0],
         store: () => ({ ...backing, read: () => backing.read(), assertAvailable: () => backing.assertAvailable(),
             write: async () => { throw new ApiError(409, 'WRITE_RACE', 'GitHub 422'); } }),
     });

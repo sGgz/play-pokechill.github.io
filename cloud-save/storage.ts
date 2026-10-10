@@ -1,4 +1,4 @@
-import { hashPayload, importPayload, validateRemote } from './protocol';
+import { hashPayload, importPayload, isUuid, validateRemote } from './protocol';
 import type { RemoteSave, SavePayload, UploadRequest } from './protocol';
 
 export interface SyncBase {
@@ -61,9 +61,10 @@ export interface StateStorage {
 export class CloudStorage implements StateStorage {
     private database: Promise<IDBDatabase>;
 
-    constructor() {
+    constructor(profileId = 'player') {
+        if (profileId !== 'player' && !isUuid(profileId)) throw new Error('本地玩家身份无效。');
         this.database = new Promise((resolve, reject) => {
-            const request = indexedDB.open('pokechill-cloud-save', 1);
+            const request = indexedDB.open('pokechill-cloud-save' + (profileId === 'player' ? '' : ':' + profileId), 1);
             request.onupgradeneeded = () => {
                 request.result.createObjectStore('kv');
                 request.result.createObjectStore('backups', { autoIncrement: true });
@@ -133,6 +134,64 @@ export class CloudStorage implements StateStorage {
             transaction.onerror = () => reject(transaction.error);
             transaction.onabort = () => reject(transaction.error);
         });
+    }
+
+    getProfile(): Promise<string | undefined> { return this.get<string>('activeProfile'); }
+    async hasProfileJournal(): Promise<boolean> { return !!await this.get('profileJournal'); }
+    async profileRecovery(): Promise<unknown[]> {
+        const database = await this.database;
+        return new Promise((resolve, reject) => {
+            const transaction = database.transaction('kv', 'readonly');
+            const store = transaction.objectStore('kv');
+            const keys = store.getAllKeys(), values = store.getAll();
+            transaction.oncomplete = () => resolve(keys.result.flatMap((key, index) => {
+                if (typeof key !== 'string' || !(key.startsWith('profile:') || key === 'profileJournal')) return [];
+                const value = values.result[index];
+                return [{ reason: key, playerId: key === 'profileJournal' ? value.id : key.slice(8),
+                    local: (key === 'profileJournal' ? value.values : value).gameData ?? null }];
+            }));
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = transaction.onerror;
+        });
+    }
+
+    // Hold the site writer lock before replaying or switching, before the game reads localStorage.
+    async selectProfile(id: string, local: Storage = localStorage): Promise<void> {
+        if (id !== 'player' && !isUuid(id)) throw new Error('本地玩家身份无效。');
+        type Values = Record<string, string>;
+        type Journal = { id: string; values: Values };
+        // Only game-owned keys move. Unrelated origin settings stay in place.
+        const owned = (key: string) => key === 'gameData' || key.startsWith('pokechillCloud:');
+        const finish = async (journal: Journal) => {
+            const keys = Array.from({ length: local.length }, (_, index) => local.key(index));
+            for (const key of keys) if (key && owned(key)) local.removeItem(key);
+            for (const [key, value] of Object.entries(journal.values)) if (owned(key)) local.setItem(key, value);
+            await this.mutate(['kv'], transaction => {
+                transaction.objectStore('kv').put(journal.id, 'activeProfile');
+                transaction.objectStore('kv').delete('profileJournal');
+            });
+        };
+        const journal = await this.get<Journal>('profileJournal');
+        if (journal) await finish(journal);
+        const active = await this.getProfile() || 'player';
+        if (active === id) {
+            await this.mutate(['kv'], transaction => transaction.objectStore('kv').put(id, 'activeProfile'));
+            return;
+        }
+        const before: Values = Object.create(null);
+        for (let index = 0; index < local.length; index++) {
+            const key = local.key(index);
+            if (key && owned(key)) {
+                const value = local.getItem(key);
+                if (value !== null) before[key] = value;
+            }
+        }
+        const next: Journal = { id, values: await this.get<Values>('profile:' + id) || {} };
+        await this.mutate(['kv'], transaction => {
+            transaction.objectStore('kv').put(before, 'profile:' + active);
+            transaction.objectStore('kv').put(next, 'profileJournal');
+        });
+        await finish(next);
     }
 }
 

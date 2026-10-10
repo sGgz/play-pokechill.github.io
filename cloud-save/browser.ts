@@ -1,4 +1,4 @@
-import CloudApi, { CloudApiError } from './api';
+import CloudApi, { CloudApiError, type CloudIdentity } from './api';
 import { SyncEngine, decideStartup } from './SyncEngine';
 import { CloudStorage, rawPayload, readLocal, payloadRaw, recoverInstall } from './storage';
 import { compareVersions, importPayload, payloadVersion, SYNC_INTERVAL } from './protocol';
@@ -20,6 +20,10 @@ function download(value: unknown, name: string): void {
 
 export class CloudGame {
     private storage!: CloudStorage;
+    private profiles!: CloudStorage;
+    private profileId = 'player';
+    private playerName = '';
+    private profileReady = false;
     private api = new CloudApi();
     private engine!: SyncEngine;
     private ready?: Promise<void>;
@@ -39,8 +43,8 @@ export class CloudGame {
     private lastAttempt = 0;
     private status = '正在检查本地与云端进度……';
 
-    canSave(): boolean { return this.writer && this.running && !this.stopped; }
-    canRun(): boolean { return this.running && !this.paused && !this.stopped; }
+    canSave(): boolean { return this.writer && this.profileReady && this.running && !this.stopped; }
+    canRun(): boolean { return this.profileReady && this.running && !this.paused && !this.stopped; }
     started(): void { this.running = true; this.render(); }
 
     bootstrap(): Promise<void> {
@@ -59,6 +63,7 @@ export class CloudGame {
             <section class="pc-cloud__body" aria-label="PokeChill 云存档">
             <h2>随时接着玩</h2><p>本地保存，云端接力。换设备前，请等待云端确认。</p>
             <p class="pc-cloud__status" id="pc-cloud-status" role="status" aria-live="polite"></p>
+            <p class="pc-cloud__time" id="pc-cloud-player"></p>
             <p class="pc-cloud__time" id="pc-cloud-time"></p>
             <div class="pc-cloud__actions">
             <button type="button" data-action="check">检查连接</button>
@@ -78,7 +83,7 @@ export class CloudGame {
             <button type="button" data-action="backups">导出恢复备份包</button>
             <a href="/login" target="_blank" rel="noopener">重新登录</a>
             <button type="button" data-action="logout">退出云登录</button>
-            </div><p class="pc-cloud__time">登录过期后，在新标签页重新登录，再回这里检查连接。不要刷新未同步的游戏。</p>
+            </div><p class="pc-cloud__time">每位玩家使用自己的专用密码。登录过期或切换玩家时，在新标签页登录，再回这里检查连接；当前进度会分别保存。</p>
             </section>`;
         document.body.appendChild(panel);
         const menu = document.getElementById('menu-items');
@@ -135,15 +140,27 @@ export class CloudGame {
         });
         if (!held) throw new Error('游戏已在另一个标签页打开。请先关闭它，再刷新这里。');
         try {
-            this.storage = new CloudStorage();
+            this.profiles = new CloudStorage();
+            let identity: CloudIdentity | undefined;
+            try { identity = await this.api.identity(); }
+            catch (error) {
+                // Without a verified identity, continue only under the last local profile.
+                if (!(error instanceof CloudApiError)) throw error;
+                this.report(error);
+            }
+            this.profileId = identity?.playerId || await this.profiles.getProfile() || 'player';
+            await this.profiles.selectProfile(this.profileId);
+            this.storage = this.profileId === 'player' ? this.profiles : new CloudStorage(this.profileId);
             this.engine = new SyncEngine(this.storage, this.api, await this.storage.getState());
             this.installPending = !!await this.storage.getJournal();
             await recoverInstall(this.storage, journal => this.commitInstall(journal));
             this.installPending = false;
+            this.profileReady = true;
+            if (identity) this.playerName = identity.playerName;
         } catch (error) {
             this.blocked = error instanceof Error ? error.message : '备份空间不可用。';
             // An incomplete replacement must be recovered before any game writes.
-            if (this.installPending || localStorage.getItem('pokechillCloud:install')) throw error;
+            if (!this.profileReady || this.installPending || localStorage.getItem('pokechillCloud:install')) throw error;
             this.report(error); this.render();
             return;
         }
@@ -152,10 +169,26 @@ export class CloudGame {
     }
 
     private async connection(): Promise<string> {
-        const slot = await this.api.status();
+        const identity = await this.api.identity();
+        if (identity.playerId !== this.profileId) {
+            this.paused = true;
+            try {
+                if (this.running && !this.stopped) this.current();
+                await this.captureQueue; await this.engine.wait();
+                if (this.blocked) throw new Error('当前玩家的备份未完成，请导出本地存档后再切换玩家。');
+                this.stopped = true;
+                this.profileReady = false;
+                await this.profiles.selectProfile(identity.playerId);
+                window.location.reload();
+                throw new Error('登录玩家已切换，双方本地进度已分别保存，正在加载该玩家的存档。');
+            } finally { if (!this.stopped) this.paused = false; }
+        }
+        const slot = identity.slotId;
         if (this.engine?.state.slotId && this.engine.state.slotId !== slot) {
             throw new Error('服务器云槽位与本机已关联槽位不同，请检查配置。');
         }
+        if (await this.api.status() !== slot) throw new Error('检查连接期间登录身份发生变化，请重试。');
+        this.playerName = identity.playerName;
         this.serverSlot = slot; this.loginRequired = false;
         return slot;
     }
@@ -189,7 +222,7 @@ export class CloudGame {
     }
 
     private startLocal(): void {
-        if (!this.writer || this.installPending || localStorage.getItem('pokechillCloud:install')) throw new Error('请先完成本地存档恢复，导出备份并释放空间后刷新。');
+        if (!this.writer || !this.profileReady || this.installPending || localStorage.getItem('pokechillCloud:install')) throw new Error('请先完成玩家切换或本地存档恢复，导出备份并释放空间后刷新。');
         rawPayload(readLocal());
         this.resume?.(); this.resume = undefined;
         if (this.running && this.stopped) window.location.reload();
@@ -321,6 +354,7 @@ export class CloudGame {
         this.busy = true; this.render();
         try {
             if (this.installPending) throw new Error('存档恢复尚未完成，请导出备份、释放空间后刷新。');
+            if (!this.profileReady) throw new Error('玩家切换尚未完成，请导出恢复备份包、释放空间后刷新。');
             if (!this.writer || !this.engine || this.blocked) throw new Error(this.blocked || '云同步尚未就绪，请先导出本地存档。');
             await operation();
         } catch (error) { this.report(error); }
@@ -330,6 +364,7 @@ export class CloudGame {
     private async action(name: string): Promise<void> {
         // Exports and deliberate local startup remain usable when cloud services are unavailable.
         if (name === 'export') {
+            if (!this.profileReady) { this.message('玩家切换未完成，请导出恢复备份包并释放存储空间后刷新。'); return; }
             try { download(this.current().gameData, 'Pokechill-' + new Date().toISOString().slice(0, 10) + '.json'); }
             catch (error) {
                 const raw = readLocal();
@@ -341,8 +376,10 @@ export class CloudGame {
         if (name === 'backups') {
             try {
                 await this.captureQueue;
-                const backups = await this.storage.allBackups();
-                download([...backups, { time: new Date().toISOString(), reason: 'export-current', local: readLocal(), remote: this.engine?.state.remoteConflict ?? null }], 'Pokechill-recovery-' + Date.now() + '.json');
+                const backups = await (this.storage || this.profiles).allBackups();
+                const profiles = await this.profiles.profileRecovery();
+                download([...backups, { time: new Date().toISOString(), reason: 'export-current', playerId: this.profileId,
+                    local: this.profileReady ? readLocal() : null, remote: this.engine?.state.remoteConflict ?? null }, ...profiles], 'Pokechill-recovery-' + Date.now() + '.json');
             } catch (error) { this.report(error); }
             return;
         }
@@ -401,19 +438,20 @@ export class CloudGame {
         const menuStatus = document.getElementById('pc-cloud-menu-status');
         if (menuStatus) menuStatus.textContent = document.getElementById('pc-cloud-summary')!.textContent;
         document.getElementById('pc-cloud-status')!.textContent = this.status;
+        document.getElementById('pc-cloud-player')!.textContent = this.playerName ? '当前玩家：' + this.playerName : '本地玩家：' + this.profileId;
         document.getElementById('pc-cloud-time')!.textContent = state?.base ? '云端确认时间：' + new Date(state.base.serverSavedAt).toLocaleString() : '尚未确认云端保存';
         for (const button of panel.querySelectorAll<HTMLButtonElement>('button[data-action]')) {
             const name = button.dataset.action;
-            button.disabled = this.busy || (name !== 'export' && name !== 'backups' && name !== 'continue' && (!this.writer || !!this.blocked));
+            button.disabled = this.busy || (name !== 'export' && name !== 'backups' && name !== 'continue' && (!this.writer || !this.profileReady || !!this.blocked));
             if (name === 'continue') {
-                button.hidden = (!this.resume && !this.stopped) || !this.writer || this.installPending || !!localStorage.getItem('pokechillCloud:install');
+                button.hidden = (!this.resume && !this.stopped) || !this.writer || !this.profileReady || this.installPending || !!localStorage.getItem('pokechillCloud:install');
                 button.textContent = this.stopped ? '重新进入游戏' : '继续本地游戏';
             }
             if (this.stopped && ['sync', 'handoff', 'use-local'].includes(name!)) button.disabled = true;
         }
         const checkbox = document.getElementById('pc-cloud-auto') as HTMLInputElement;
         checkbox.checked = state?.autoSync ?? false;
-        checkbox.disabled = this.busy || this.stopped || !state?.base || !!this.blocked || !!state?.hasConflict || this.loginRequired;
+        checkbox.disabled = this.busy || this.stopped || !this.profileReady || !state?.base || !!this.blocked || !!state?.hasConflict || this.loginRequired;
         document.getElementById('pc-cloud-conflict')!.hidden = !state?.hasConflict;
         if (state?.hasConflict) {
             const local = state.latest;

@@ -63,3 +63,59 @@ test('recovery copies are bounded to the newest thirty snapshots', async () => {
     const backups = await storage.allBackups() as any[];
     assert.equal(backups.length, 30); assert.equal(backups[0].local, '5'); assert.equal(backups.at(-1).local, '34');
 });
+
+test('switching players preserves legacy data, new-game markers and unrelated settings', async () => {
+    const profiles = fixture(), local = browserStorage(), friend = crypto.randomUUID();
+    const mine = payloadRaw(payload(1)), theirs = payloadRaw(payload(2));
+    local.setItem('gameData', mine);
+    local.setItem('pokechillCloud:newGame', 'pending');
+    local.setItem('unrelated-settings', 'keep');
+    await profiles.selectProfile(friend, local);
+    assert.equal(await profiles.getProfile(), friend);
+    assert.equal(local.getItem('gameData'), null);
+    assert.equal(local.getItem('pokechillCloud:newGame'), null);
+    assert.equal(local.getItem('unrelated-settings'), 'keep');
+    local.setItem('gameData', theirs);
+    await profiles.selectProfile('player', local);
+    assert.equal(local.getItem('gameData'), mine);
+    assert.equal(local.getItem('pokechillCloud:newGame'), 'pending');
+    await profiles.selectProfile(friend, local);
+    assert.equal(local.getItem('gameData'), theirs);
+});
+
+test('player switch journal replays after quota failure without archiving partial data', async () => {
+    const profiles = fixture(), local = browserStorage(), friend = crypto.randomUUID();
+    const mine = payloadRaw(payload(1)), theirs = payloadRaw(payload(2));
+    local.setItem('gameData', mine);
+    await profiles.selectProfile(friend, local);
+    local.setItem('gameData', theirs);
+    local.fail = true;
+    await assert.rejects(profiles.selectProfile('player', local), /quota/);
+    assert.equal(await profiles.getProfile(), friend);
+    assert.equal(await profiles.hasProfileJournal(), true);
+    const recovery = await profiles.profileRecovery() as any[];
+    assert.ok(recovery.some(entry => entry.local === mine));
+    assert.ok(recovery.some(entry => entry.local === theirs));
+    const reopened = new CloudStorage();
+    await reopened.selectProfile('player', local);
+    assert.equal(await reopened.hasProfileJournal(), false);
+    assert.equal(local.getItem('gameData'), mine);
+    await reopened.selectProfile(friend, local);
+    assert.equal(local.getItem('gameData'), theirs);
+});
+
+test('players have separate pending uploads, conflict records, backups and install journals', async () => {
+    const primary = fixture(), friend = new CloudStorage(crypto.randomUUID());
+    const state = emptyState();
+    state.latest = payload(99); state.autoSync = true; state.hasConflict = true;
+    await primary.saveState(state);
+    await primary.backup(payloadRaw(payload(1)), null, 'primary');
+    await primary.stageInstall({ key: 'gameData', before: null, after: payloadRaw(payload(2)), remote: null });
+    assert.equal((await friend.getState()).latest, null);
+    assert.equal((await friend.getState()).autoSync, false);
+    assert.equal((await friend.getState()).hasConflict, false);
+    assert.deepEqual(await friend.allBackups(), []);
+    assert.equal(await friend.getJournal(), undefined);
+    assert.equal((await new CloudStorage().getState()).latest?.gameData.saved.money, 99);
+    assert.throws(() => new CloudStorage('../escape'));
+});

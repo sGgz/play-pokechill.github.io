@@ -19,7 +19,8 @@
     "cloud:deploy": "npm run build && wrangler deploy --config cloud-save-worker/wrangler.local.json",
     "cloud:secret": "wrangler secret put GITHUB_SAVE_TOKEN --config cloud-save-worker/wrangler.local.json",
     "cloud:password": "node cloud-save-worker/scripts/password.mjs",
-    "cloud:recover": "node cloud-save-worker/scripts/recover.mjs"
+    "cloud:recover": "node cloud-save-worker/scripts/recover.mjs",
+    "cloud:players": "node cloud-save-worker/scripts/players.mjs"
   },
   "dependencies": {
     "jose": "^6.1.0"

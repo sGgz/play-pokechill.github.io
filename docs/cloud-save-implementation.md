@@ -1,6 +1,20 @@
 # PokeChill 私人云存档实现
 
-参考仓库 `sGgz/pokeclicker` 的远程默认主干 `origin/develop`，参考提交 `d84f147409454c3640766b39f7d1444237f92430`。新游戏基于 Fork 的 `main`，实现分支为 `codex/cloud-save`。
+初版参考 `sGgz/pokeclicker` 提交 `d84f147409454c3640766b39f7d1444237f92430`。2026-10-10 多玩家升级对照本机 `E:\myCode\pokeclicker` 当前 `develop` 的 `adf89c4f4`，其中私有 Git 玩家注册表实现为 `db7f74eb0`。本次 PokeChill 实现分支为 `codex/multi-player-cloud-save`。
+
+## 2026-10-10 多玩家与私有 Git 玩家注册表
+
+同一域名支持最多 20 位玩家，每人使用独立随机密码和稳定 UUID 云槽位。`config/players.json` 存在 PokeChill 自己的私有存档仓库，包含玩家 ID、名称、槽位、密码校验值、凭证版本；不保存明文密码或签名密钥。`GAME_AUTH` version 3 只保留 Cloudflare 签名主密钥，通过 HMAC 按玩家身份、槽位、凭证版本派生会话密钥。Cookie、JWT audience 和派生密钥命名仍与 PokéClicker 分开。
+
+`identity` 和 `status` 返回验证后的玩家身份。GET/PUT 使用该身份选择 `saves/<slotId>.json`，客户端不能访问另一玩家的槽位。version 1 单人和 version 2 旧多人 Secret 继续兼容；远端模式必须读取有效注册表，不回退旧凭证。注册表读取确认仓库私有，合并并缓存请求最多 15 秒，缓存到期后网络故障关闭认证。远端模式的身份确认依赖注册表；旧 Secret 模式的身份接口不依赖存档仓库连接。
+
+管理接口只有已登录主玩家 `player` 可以调用，要求同源。`cloud:players` 提供 `init`、`add`、`list`、`reset`，每次在本机交互终端隐藏输入主玩家密码，会话仅留在内存。迁移先从线上 version 1/2 复制全部玩家到 Git，再上传 version 3 主密钥；原密码、身份、槽位保持不变，全部旧会话失效。迁移中断可以重试，但拒绝覆盖不同配置。管理读取最新文件，写入使用文件 SHA 防止覆盖并发修改。重置只更换一个人的密码校验值和凭证版本，其槽位及其他玩家会话保持不变。`cloud:password` 检查线上模式，拒绝将多人站点覆盖为单人配置。
+
+浏览器持有原站点写入锁后，在游戏读档前选择玩家。主玩家继续使用原 `pokechill-cloud-save` 数据库，其他人使用 `pokechill-cloud-save:<playerId>`，同步基线、自动同步、待确认上传、安装日志、冲突和最多 30 条恢复副本各自独立。原格式 `gameData` 和 `pokechillCloud:*` 标记按玩家归档，保留同域其他设置。切换前暂停游戏、保存并等待持久化，然后通过切换日志装载目标玩家并重载；切换失败时禁止运行，导出恢复包能包含日志中的双方原格式进度，释放空间后重放。登录或网络异常时，只允许明确继续最后一个本地玩家，不能把未确认的身份当作新玩家。
+
+本次实现范围为网页与 Worker；没有新增桌面客户端或联机玩法。迁移和新增玩家需在本机按[操作手册](cloud-save-deployment.md)执行，Git 提交不会自动发布或修改真实玩家配置。
+
+本轮在 Node.js `v24.21.0` 下完整 `npm run verify` 通过：81 项测试全部成功，TypeScript、JavaScript 语法与入口检查、生产构建、Wrangler dry-run 成功。新增原生 workerd 测试实际执行私有注册表读写、HMAC 密钥派生及 JWT 签名校验，出站在运行时边界由测试拦截；签名玩家并发与前端切换使用隔离的假存储，未连接真实存档仓库。此次未部署线上、执行真实玩家迁移或读取改写用户游戏进度。
 
 ## 架构与范围
 
@@ -10,7 +24,7 @@
 
 PokeChill 云档 payload 为 `{ gameId: 'pokechill', gameData: 原版JSON }`，保留 saved、team、宝可梦、道具、商店和区域字段。协议禁止其他游戏 payload，验证版本、首次开局标记、时间、层级、大小、危险属性和哈希。版本从原版 `saved.version` 识别，客户端构建标识从源码计算。
 
-网站全站经过登录门禁，包括静态资源和存档 API。GitHub token 与密码校验值只存 Worker Secret。个人单槽位、单游戏密码，不提供多人账号注册、排行榜、服务器模拟或桌面客户端。
+网站全站经过登录门禁，包括静态资源和存档 API。GitHub token 和签名主密钥只存 Worker Secret，远端玩家模式的密码校验值存私有 Git 注册表。每位玩家一个云槽位，由主玩家管理，不提供公开注册、排行榜、服务器模拟或桌面客户端。
 
 ## 接入点
 
@@ -30,7 +44,7 @@ PokeChill 云档 payload 为 `{ gameId: 'pokechill', gameData: 原版JSON }`，�
 
 ## 构建与验证
 
-要求 Node.js 24；`npm run verify` 执行类型检查、JavaScript 语法和入口检查、56 项自动测试、生产构建、Wrangler dry-run。测试覆盖登录门禁、会话与来源、登录限流、UTF-8、并发创建、旧基线冲突、丢回执重试、较旧版本拒绝、GitHub 故障区分、真实 workerd 出站边界、备份转换、配置和密码脚本、PokeChill payload 校验、恢复重放、容量失败、副本数量上限和自动同步复选框的状态持久化。
+要求 Node.js 24；`npm run verify` 执行类型检查、JavaScript 语法和入口检查、自动测试、生产构建、Wrangler dry-run。测试覆盖登录门禁、会话与来源、登录限流、UTF-8、并发创建、旧基线冲突、丢回执重试、较旧版本拒绝、GitHub 故障区分、真实 workerd 出站边界、备份转换、配置和密码脚本、PokeChill payload 校验、恢复重放、容量失败、副本数量上限和自动同步复选框的状态持久化。多玩家新增测试覆盖私有注册表迁移、管理权限与 SHA 冲突、单人会话撤销、缓存到期失败、原生运行时 HMAC 派生及签名、两位玩家并发存档和跨槽位拒绝、本地往返切换、配额错误重放、账号切换前阻止旧进度上传。
 
 真实浏览器验收使用 Playwright CLI 和独立临时浏览器资料。`test/browser-fixture.ts` 在 `127.0.0.1:3001` 提供真实 API handler + 内存假存储，硬编码测试凭据、没有 GitHub 出站调用，不读取用户真实进度。运行前先 build，再执行 `node --import tsx test/browser-fixture.ts`。仅用于本机验收，构建不会复制此文件。
 

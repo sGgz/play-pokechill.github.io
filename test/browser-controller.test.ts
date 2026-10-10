@@ -6,7 +6,7 @@ import { CloudStorage, emptyState, payloadRaw } from '../cloud-save/storage';
 import { hashPayload, type RemoteSave, type SavePayload } from '../cloud-save/protocol';
 
 const { JSDOM } = createRequire(import.meta.url)('jsdom');
-test('the actual checkbox change persists the selected value through busy-state rerenders', async () => {
+test('the controller persists checkbox choices and switches players before any cloud upload', async () => {
     const dom = new JSDOM('<!doctype html><html><body><button id="menu-button" class="menu-button-open"></button><div id="menu-items"></div></body></html>', { url: 'https://fixture.test' });
     const originalFetch = globalThis.fetch;
     const globals = ['window', 'document', 'localStorage', 'indexedDB', 'navigator', 'setInterval'];
@@ -32,7 +32,9 @@ test('the actual checkbox change persists the selected value through busy-state 
         } });
         await storage.saveState(state);
         localStorage.setItem('gameData', payloadRaw(payload));
-        globalThis.fetch = async input => Response.json(String(input).endsWith('/status') ? { slotId: slot } : remote);
+        globalThis.fetch = async input => Response.json(String(input).endsWith('/identity')
+            ? { slotId: slot, playerId: 'player', primaryPlayerId: 'player', playerName: '我' }
+            : String(input).endsWith('/status') ? { slotId: slot } : remote);
         const { CloudGame } = await import('../cloud-save/browser');
         const game = new CloudGame();
         await game.bootstrap(); game.started();
@@ -54,6 +56,31 @@ test('the actual checkbox change persists the selected value through busy-state 
             assert.equal(checkbox.checked, selected);
             assert.equal((await storage.getState()).autoSync, selected);
         }
+        let uploads = 0, reloads = 0, saves = 0;
+        const friend = crypto.randomUUID(), friendSlot = crypto.randomUUID();
+        const mine = localStorage.getItem('gameData');
+        Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: {
+            saveGame: () => { saves++; }, location: { reload: () => { reloads++; } },
+        } });
+        globalThis.fetch = async (input, init) => {
+            if (init?.method === 'PUT') uploads++;
+            assert.ok(String(input).endsWith('/identity'), 'must stop before reading/uploading the other player cloud');
+            return Response.json({ playerId: friend, primaryPlayerId: 'player', playerName: '朋友', slotId: friendSlot });
+        };
+        await (game as any).action('sync');
+        assert.equal(uploads, 0);
+        assert.equal(saves, 1);
+        assert.equal(reloads, 1);
+        assert.equal(game.canSave(), false);
+        assert.equal(game.canRun(), false);
+        assert.equal(localStorage.getItem('gameData'), null);
+        assert.equal(await storage.getProfile(), friend);
+        await game.importData(payload.gameData);
+        assert.equal(await storage.getJournal(), undefined, 'a pending player reload must block imports into the old player storage');
+        assert.equal(localStorage.getItem('gameData'), null);
+        await storage.selectProfile('player');
+        assert.equal(localStorage.getItem('gameData'), mine);
+        assert.equal((await new CloudStorage(friend).getState()).latest, null);
     } finally {
         globalThis.fetch = originalFetch;
         globals.forEach((name, index) => {

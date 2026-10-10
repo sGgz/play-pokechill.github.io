@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve, sep, extname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createHandler, type Env } from '../cloud-save-worker/src/index';
-import { SESSION_COOKIE } from '../cloud-save-worker/src/auth';
+import { SESSION_COOKIE, players } from '../cloud-save-worker/src/auth';
 import type { CloudSaveEnvelope, RemoteSave } from '../cloud-save/protocol';
 
 const root = fileURLToPath(new URL('../dist/', import.meta.url));
@@ -29,7 +29,7 @@ const env: Env = {
         } catch { return new Response('Not found', { status: 404 }); }
     } },
 };
-const handler = createHandler({ authenticate: async () => {}, now: () => { now += 20000; return now; }, store: () => ({
+const handler = createHandler({ authenticate: async (_token, config) => players(config)[0], now: () => { now += 20000; return now; }, store: () => ({
     async assertAvailable() {}, async read() { return structuredClone(current); },
     async write(envelope: CloudSaveEnvelope, sha: string | null) {
         if ((current?.blobSha ?? null) !== sha) throw new Error('fixture race');
