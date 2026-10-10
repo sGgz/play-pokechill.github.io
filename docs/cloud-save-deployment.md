@@ -224,6 +224,16 @@ npm run cloud:recover -- "C:\Users\你的用户名\Downloads\Pokechill-recovery-
 
 工具在原文件旁创建新文件夹，输出 `*-local.json` 与 `*-cloud.json`；不会覆盖原文件。选择所需的一份，用游戏 Import Data 导入，核对后再决定是否同步。
 
+如果运行 `cloud:login` 提示 `'wrangler' 不是内部或外部命令`，先确认当前目录是本游戏项目根目录，并执行：
+
+```cmd
+npm ci --include=dev
+npm run cloud:check
+npm run cloud:login
+```
+
+Wrangler 属于项目的开发依赖，部署电脑也需要安装；`--include=dev` 确保没有被生产依赖设置省略。它由 npm 脚本从 `node_modules\.bin` 加载，无需全局安装。若重装提示 `EPERM` 并指向 `esbuild.exe`，先关闭这个项目的本地开发或测试服务，再重试安装；不要直接把权限问题当成需要管理员运行。
+
 | 提示或现象 | 处理方法 |
 | --- | --- |
 | `AUTH_CONFIGURATION` | 对新 Worker 执行 `npm run cloud:password`，确认上传成功 |
