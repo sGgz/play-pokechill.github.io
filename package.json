@@ -9,6 +9,7 @@
   "scripts": {
     "android:prepare": "node tools/android.mjs prepare",
     "android:build": "node tools/android.mjs build",
+    "android:signing:restore": "node tools/android.mjs signing:restore",
     "build": "node tools/build.mjs",
     "dev": "npm run build && node tools/serve.mjs",
     "check": "tsc --noEmit && node tools/check.mjs",

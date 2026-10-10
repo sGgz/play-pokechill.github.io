@@ -1,9 +1,9 @@
-import { randomBytes } from 'node:crypto';
 import { copyFile, mkdir, readFile, readdir, access, writeFile, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolve, relative } from 'node:path';
 import { sha256 } from './web-release.mjs';
+import { ensureAndroidSigning } from './android-signing.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const android = resolve(root, 'android');
@@ -54,24 +54,14 @@ async function buildEnvironment() {
     return env;
 }
 
-async function ensureSigning(env) {
-    const properties = resolve(android, 'signing.local.properties');
-    const keyStore = resolve(root, '.local/android-release.jks');
-    if (await exists(properties)) return;
-    if (await exists(keyStore)) throw new Error('已有签名密钥，请恢复 android/signing.local.properties，不能重新生成不同签名。');
-    await mkdir(resolve(root, '.local'), { recursive: true });
-    const password = randomBytes(32).toString('base64url');
-    execFileSync(resolve(env.JAVA_HOME, 'bin', process.platform === 'win32' ? 'keytool.exe' : 'keytool'), [
-        '-genkeypair', '-keystore', keyStore, '-storepass:env', 'POKECHILL_SIGNING_PASSWORD', '-keypass:env', 'POKECHILL_SIGNING_PASSWORD',
-        '-alias', 'pokechill', '-keyalg', 'RSA', '-keysize', '3072', '-validity', '10000', '-dname', 'CN=PokeChill', '-noprompt',
-    ], { env: { ...env, POKECHILL_SIGNING_PASSWORD: password }, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
-    await writeFile(properties, `storeFile=../.local/android-release.jks\nstorePassword=${password}\nkeyAlias=pokechill\nkeyPassword=${password}\n`, { encoding: 'utf8', mode: 0o600 });
-    console.log('Created a persistent private APK signing key. Back up .local/android-release.jks and android/signing.local.properties.');
-}
-
 async function main() {
     const command = process.argv[2] || 'build';
-    if (!['prepare', 'build'].includes(command)) throw new Error('Usage: node tools/android.mjs [prepare|build]');
+    if (!['prepare', 'build', 'signing:restore'].includes(command)) throw new Error('Usage: node tools/android.mjs [prepare|build|signing:restore]');
+    if (command === 'signing:restore') {
+        const result = await ensureAndroidSigning({ env: await buildEnvironment(), forceRestore: true });
+        console.log(`Private APK signing backup verified${result.restored ? ' and restored' : ''}: ${result.commit}`);
+        return;
+    }
     let origin = process.env.POKECHILL_ORIGIN;
     if (!origin) {
         try { origin = JSON.parse(await readFile(resolve(root, 'cloud-save-worker/wrangler.local.json'), 'utf8')).vars?.ALLOWED_ORIGIN; }
@@ -83,7 +73,7 @@ async function main() {
     await prepareAndroid(origin);
     if (command === 'prepare') return;
     const env = await buildEnvironment();
-    await ensureSigning(env);
+    await ensureAndroidSigning({ env });
     const args = [':app:testReleaseUnitTest', ':app:lintRelease', ':app:assembleRelease', '--console=plain'];
     if (process.platform === 'win32') {
         const portableGradle = 'E:/DevCache/pokechill-android/gradle-8.11.1/bin/gradle';

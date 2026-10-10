@@ -21,12 +21,22 @@ POKECHILL_ORIGIN=https://game.example.com npm run android:build
 
 域名必须是 HTTPS 根域名，不包含路径、凭据或非标准端口。这里只使用域名，不会将部署配置里的云槽位、Secret 或 GitHub token 打进 APK。真实域名会存在 APK 内，不能把它当作秘密。
 
-命令会重新构建游戏、校验内置资源、执行安卓单元测试和 lint，然后生成签名的 `output/android/PokeChill.apk`。首次执行自动生成独立的长期签名密钥：
+命令会重新构建游戏、校验内置资源、执行安卓单元测试和 lint，然后生成签名的 `output/android/PokeChill.apk`。构建使用已经备份的长期签名密钥：
 
 - `.local/android-release.jks`
 - `android/signing.local.properties`
 
-**请把这两个文件一起备份到私人安全位置。** 它们被 Git 忽略。以后更新原生 APK 必须沿用同一签名并提高 `android/app/build.gradle` 的 `versionCode`。不要把密钥或密码提交到源码仓库，也不要重新生成密钥来覆盖旧安装。
+这两个文件已备份至私有存档仓库 `sGgz/pokechill-save` 的 `main` 分支：`android-signing/android-release.jks` 和 `android-signing/signing.local.properties`。本地文件仍被源码 Git 忽略。构建缺少其中任意文件时会通过 Git SSH 自动拉取同一提交中的两份备份；需要本机 SSH 对私有存档仓库有读取权限。
+
+也可以单独恢复或核对私有备份：
+
+```bash
+npm run android:signing:restore
+```
+
+恢复前会验证密码能访问私钥，并核对签名证书 SHA-256 与当前 APK 固定指纹。已有本地文件与远端不一致时停止，不覆盖；仓库无法访问、备份缺失或验证失败时停止，不生成新密钥。本地两份文件齐全且校验通过时，常规构建无需访问签名仓库。密钥和密码不会输出到日志或放进 APK。
+
+以后更新原生 APK 必须沿用同一签名并提高 `android/app/build.gradle` 的 `versionCode`。不要把密钥或密码提交到源码仓库，也不要重新生成密钥来覆盖旧安装。该私有存档仓库包含签名凭据，应继续保持私有。
 
 仅准备内置资源、随后在 Android Studio 中打开 `android/` 时运行 `npm run android:prepare`。
 
@@ -82,7 +92,8 @@ npm run cloud:deploy
 
 ## 本次验证范围
 
-- `npm run verify`：类型和语法检查、89 项网页与云存档测试、资源构建及 Cloudflare 发布 dry-run 通过。
+- `npm run verify`：类型和语法检查、95 项网页、云存档与安卓签名测试、资源构建及 Cloudflare 发布 dry-run 通过。
+- 私有签名备份已在独立空目录恢复，两份文件与原文件逐字节相同；证书与现有 APK 一致。签名测试覆盖缺文件恢复、本地冲突、证书不匹配、密码无效及仓库不可访问。
 - 安卓 release 构建、6 项更新器单元测试、lint 通过；lint 无问题。
 - 签名安装包的 APK Signature Scheme v2 验证通过，包名为 `com.pokechill.game`。
 - 本机未连接安卓真机。独立的无窗口 Android 15 模拟器在进入系统前崩溃，未完成安装后的真实 WebView、触屏和云登录端到端验收。上述结果不等同于手机实测。
