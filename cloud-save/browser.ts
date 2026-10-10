@@ -29,6 +29,10 @@ export class CloudGame {
     private ready?: Promise<void>;
     private resume?: () => void;
     private writer = false;
+    private writerRequest?: AbortController;
+    private releaseWriter?: () => void;
+    private leaving = false;
+    private departure?: Promise<void>;
     private running = false;
     private paused = false;
     private stopped = false;
@@ -44,7 +48,7 @@ export class CloudGame {
     private status = '正在检查本地与云端进度……';
 
     canSave(): boolean { return this.writer && this.profileReady && this.running && !this.stopped; }
-    canRun(): boolean { return this.profileReady && this.running && !this.paused && !this.stopped; }
+    canRun(): boolean { return this.writer && this.profileReady && this.running && !this.paused && !this.stopped; }
     started(): void { this.running = true; this.render(); }
 
     bootstrap(): Promise<void> {
@@ -138,7 +142,19 @@ export class CloudGame {
             // Local synchronous save only; an unload is not proof of a cloud receipt.
             if (document.hidden && this.canSave()) window.saveGame();
         });
-        window.addEventListener('pagehide', () => { if (this.canSave()) window.saveGame(); });
+        window.addEventListener('pagehide', () => {
+            try { if (this.canSave()) window.saveGame(); }
+            finally {
+                // A cached mobile document must stop writing and let its successor acquire the lock.
+                this.leaving = true; this.stopped = true;
+                this.writerRequest?.abort();
+                void this.finishDeparture();
+            }
+        });
+        window.addEventListener('pageshow', () => {
+            // Returning from browser history must load the latest profile under a new lock.
+            if (this.leaving) window.location.reload();
+        });
         window.addEventListener('beforeunload', event => {
             if (this.busy) { event.preventDefault(); event.returnValue = ''; }
             else if (this.canSave()) window.saveGame();
@@ -152,23 +168,58 @@ export class CloudGame {
     }
 
     private async prepareStartup(): Promise<void> {
-        if (this.busy) return;
+        if (this.busy || this.leaving) return;
         this.busy = true; this.render();
         try { await this.prepare(); }
         catch (error) { this.report(error); }
-        finally { this.busy = false; this.render(); }
+        finally { this.busy = false; this.render(); void this.finishDeparture(); }
+    }
+
+    private async finishDeparture(): Promise<void> {
+        if (!this.leaving || this.busy) return;
+        this.departure ??= (async () => {
+            // Keep exclusivity until any old-page persistence has finished.
+            try { await this.captureQueue; await this.engine?.wait(); }
+            catch (error) { this.report(error); }
+            finally { this.writer = false; this.releaseWriter?.(); this.releaseWriter = undefined; }
+        })();
+        await this.departure;
+    }
+
+    private async acquireWriter(): Promise<void> {
+        if (this.writer) return;
+        if (!navigator.locks) throw new Error('此浏览器不支持多标签保护，请使用新版 Chrome、Edge、Firefox 或 Safari。');
+        const request = new AbortController();
+        this.writerRequest = request;
+        const timeout = setTimeout(() => request.abort(), 1800);
+        let held: boolean;
+        try {
+            held = await new Promise<boolean>((resolve, reject) => {
+                // Use a bounded queued request instead of trusting ifAvailable implementations.
+                void navigator.locks.request('pokechill-game-writer', { signal: request.signal }, lock => {
+                    if (!lock || this.leaving) { resolve(false); return; }
+                    this.writer = true;
+                    const lifetime = new Promise<void>(release => { this.releaseWriter = release; });
+                    resolve(true);
+                    return lifetime;
+                }).catch(error => { if (request.signal.aborted) resolve(false); else reject(error); });
+            });
+        } finally {
+            clearTimeout(timeout);
+            if (this.writerRequest === request) this.writerRequest = undefined;
+        }
+        if (this.leaving) throw new Error('游戏页面已离开，请重新进入。');
+        if (held) return;
+        const snapshot = await navigator.locks.query?.().catch(() => undefined);
+        const count = snapshot?.held?.filter(lock => lock.name === 'pokechill-game-writer').length;
+        const diagnosis = count === undefined ? '浏览器未能确认游戏写入锁的状态。'
+            : count > 0 ? `浏览器中的游戏会话尚未释放（检测到 ${count} 个占用）。`
+            : '浏览器暂未授予游戏写入权限（未检测到占用）。';
+        throw new Error(diagnosis + '这不能证明你打开了第二个标签页。请点“重试打开游戏”；如果只有一个页面且仍失败，请完全退出浏览器后重新打开游戏，保留网站数据。其他设备不会占用这把锁。');
     }
 
     private async prepare(): Promise<void> {
-        if (!navigator.locks) throw new Error('此浏览器不支持多标签保护，请使用新版 Chrome、Edge、Firefox 或 Safari。');
-        const held = await new Promise<boolean>((resolve, reject) => {
-            void navigator.locks.request('pokechill-game-writer', { ifAvailable: true }, lock => {
-                if (!lock) { resolve(false); return; }
-                this.writer = true; resolve(true);
-                return new Promise<void>(() => {});
-            }).catch(reject);
-        });
-        if (!held) throw new Error('游戏已在本浏览器的另一个标签页打开，也可能在其他窗口或标签组中。请关闭旧游戏页面，再点“重试打开游戏”。这只检查本机浏览器，不受其他设备影响。');
+        await this.acquireWriter();
         try {
             this.profiles = new CloudStorage();
             let identity: CloudIdentity | undefined;
@@ -252,7 +303,7 @@ export class CloudGame {
     }
 
     private startLocal(): void {
-        if (!this.writer || !this.profileReady || this.installPending || localStorage.getItem('pokechillCloud:install')) throw new Error('请先完成玩家切换或本地存档恢复，导出备份并释放空间后刷新。');
+        if (this.leaving || !this.writer || !this.profileReady || this.installPending || localStorage.getItem('pokechillCloud:install')) throw new Error('请先完成玩家切换或本地存档恢复，导出备份并释放空间后刷新。');
         rawPayload(readLocal());
         this.resume?.(); this.resume = undefined;
         if (this.running && this.stopped) window.location.reload();
@@ -268,7 +319,7 @@ export class CloudGame {
     }
 
     afterLocalSave(raw: string): void {
-        if (!this.engine || this.blocked || this.stopped) return;
+        if (!this.writer || !this.engine || this.blocked || this.stopped) return;
         this.captureQueue = this.captureQueue.then(async () => {
             const payload = rawPayload(raw);
             if (payload) await this.engine.capture(payload);
@@ -380,7 +431,7 @@ export class CloudGame {
     }
 
     private async guarded(operation: () => Promise<void>): Promise<void> {
-        if (this.busy) return;
+        if (this.busy || this.leaving) return;
         this.busy = true; this.render();
         try {
             if (this.installPending) throw new Error('存档恢复尚未完成，请导出备份、释放空间后刷新。');
@@ -388,7 +439,7 @@ export class CloudGame {
             if (!this.writer || !this.engine || this.blocked) throw new Error(this.blocked || '云同步尚未就绪，请先导出本地存档。');
             await operation();
         } catch (error) { this.report(error); }
-        finally { this.busy = false; this.render(); }
+        finally { this.busy = false; this.render(); void this.finishDeparture(); }
     }
 
     private async action(name: string): Promise<void> {
@@ -495,4 +546,5 @@ export class CloudGame {
     }
 }
 
-window.PokeChillCloud = new CloudGame();
+// Repeated script loading in one document must reuse its existing controller.
+window.PokeChillCloud ??= new CloudGame();

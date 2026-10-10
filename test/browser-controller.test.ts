@@ -91,7 +91,7 @@ test('the controller persists checkbox choices and switches players before any c
     }
 });
 
-test('a blocked mobile page can reopen cloud controls and retry after the other tab closes', { timeout: 5000 }, async () => {
+test('a blocked mobile page can reopen cloud controls and retry after the other tab closes', { timeout: 12000 }, async () => {
     const dom = new JSDOM('<!doctype html><html><body><div id="menu-button"><svg><path id="menu-icon" /></svg><div id="menu-items"></div></div><button id="game-action">游戏按钮</button></body></html>', { url: 'https://fixture.test' });
     const names = ['window', 'document', 'localStorage', 'indexedDB', 'navigator', 'setInterval', 'fetch'];
     const descriptors = names.map(name => Object.getOwnPropertyDescriptor(globalThis, name));
@@ -101,9 +101,11 @@ test('a blocked mobile page can reopen cloud controls and retry after the other 
         for (const [name, value] of Object.entries({
             window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage,
             indexedDB: new IDBFactory(), setInterval: () => 0,
-            navigator: { locks: { request(_name: string, _options: unknown, callback: (lock: object | null) => unknown) {
-                requests++; callback(otherTabOpen ? null : {}); return Promise.resolve();
-            } } },
+            navigator: { locks: { request(_name: string, options: LockOptions, callback: (lock: object | null) => unknown) {
+                requests++;
+                if (!otherTabOpen || options.ifAvailable) { callback(otherTabOpen ? null : {}); return Promise.resolve(); }
+                return new Promise((_resolve, reject) => options.signal!.addEventListener('abort', () => reject(options.signal!.reason), { once: true }));
+            }, query: async () => ({ held: otherTabOpen ? [{ name: 'pokechill-game-writer' }] : [], pending: [] }) } },
             fetch: async (input: unknown) => Response.json(String(input).endsWith('/identity')
                 ? { playerId: 'player', primaryPlayerId: 'player', playerName: '我', slotId: slot }
                 : String(input).endsWith('/status') ? { slotId: slot }
@@ -112,9 +114,9 @@ test('a blocked mobile page can reopen cloud controls and retry after the other 
         const { CloudGame } = await import('../cloud-save/browser');
         const game = new CloudGame();
         void game.bootstrap().then(() => { started = true; game.started(); });
-        await new Promise(resolve => setTimeout(resolve, 20));
+        await waitUntil(() => !document.querySelector<HTMLButtonElement>('button[data-action="check"]')!.disabled);
         const panel = document.getElementById('pc-cloud') as HTMLDetailsElement;
-        assert.match(document.getElementById('pc-cloud-status')!.textContent!, /另一个标签页/);
+        assert.match(document.getElementById('pc-cloud-status')!.textContent!, /游戏会话尚未释放/);
         assert.equal(game.canSave(), false);
         document.getElementById('game-action')!.addEventListener('click', () => { gameClicks++; });
         const pointer = new dom.window.Event('pointerdown', { bubbles: true, cancelable: true });
@@ -134,7 +136,7 @@ test('a blocked mobile page can reopen cloud controls and retry after the other 
         const retry = panel.querySelector<HTMLButtonElement>('button[data-action="check"]')!;
         assert.equal(retry.disabled, false);
         retry.click();
-        await new Promise(resolve => setTimeout(resolve, 20));
+        await waitUntil(() => !retry.disabled);
         assert.equal(started, false);
         assert.equal(game.canSave(), false);
         otherTabOpen = false;
@@ -143,6 +145,113 @@ test('a blocked mobile page can reopen cloud controls and retry after the other 
         assert.equal(started, true);
         assert.equal(requests, 3, 'retry must attempt the real writer lock again without stealing it');
         assert.equal(game.canSave(), true);
+    } finally {
+        names.forEach((name, index) => {
+            if (descriptors[index]) Object.defineProperty(globalThis, name, descriptors[index]!);
+            else Reflect.deleteProperty(globalThis, name);
+        });
+        dom.window.close();
+    }
+});
+
+async function waitUntil(condition: () => boolean): Promise<void> {
+    const until = Date.now() + 4000;
+    while (!condition()) {
+        assert.ok(Date.now() < until, 'controller did not settle');
+        await new Promise(resolve => setTimeout(resolve, 10));
+    }
+}
+
+test('one mobile page starts even when the browser denies only ifAvailable requests', { timeout: 5000 }, async () => {
+    const dom = new JSDOM('<!doctype html><html><body><div id="menu-items"></div></body></html>', { url: 'https://fixture.test' });
+    const names = ['window', 'document', 'localStorage', 'indexedDB', 'navigator', 'setInterval', 'fetch'];
+    const descriptors = names.map(name => Object.getOwnPropertyDescriptor(globalThis, name));
+    let held = false, started = false, saved = 0, release: Promise<unknown> | undefined;
+    let finishConnection: (() => void) | undefined;
+    let connectionStarted = false;
+    const slot = crypto.randomUUID();
+    try {
+        for (const [name, value] of Object.entries({
+            window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage,
+            indexedDB: new IDBFactory(), setInterval: () => 0,
+            navigator: { locks: {
+                request(_name: string, options: LockOptions, callback: (lock: object | null) => unknown) {
+                    if (options.ifAvailable) { callback(null); return Promise.resolve(); }
+                    assert.equal(held, false, 'one page must not request its own held lock again');
+                    held = true;
+                    release = Promise.resolve(callback({})).finally(() => { held = false; });
+                    return release;
+                },
+                query: async () => ({ held: held ? [{ name: 'pokechill-game-writer' }] : [], pending: [] }),
+            } },
+            fetch: async (input: unknown) => {
+                if (String(input).endsWith('/identity') && started) {
+                    connectionStarted = true;
+                    await new Promise<void>(resolve => { finishConnection = resolve; });
+                }
+                return Response.json(String(input).endsWith('/identity')
+                    ? { playerId: 'player', primaryPlayerId: 'player', playerName: '我', slotId: slot }
+                    : String(input).endsWith('/status') ? { slotId: slot }
+                    : { code: 'EMPTY_SLOT', message: 'empty' }, { status: String(input).includes('/slots/') ? 404 : 200 });
+            },
+        })) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
+        const { CloudGame } = await import('../cloud-save/browser');
+        const game = new CloudGame();
+        dom.window.saveGame = () => { saved++; };
+        void game.bootstrap().then(() => { started = true; game.started(); });
+        await waitUntil(() => !document.querySelector<HTMLButtonElement>('button[data-action="check"]')!.disabled);
+        assert.equal(started, true, 'a single page must start when a normal lock request can succeed');
+        assert.equal(held, true);
+        assert.equal(game.canRun(), true);
+        const connection = (game as any).action('check');
+        await waitUntil(() => connectionStarted);
+        dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: true }));
+        assert.equal(saved, 1, 'departing page saves before losing write permission');
+        assert.equal(game.canRun(), false, 'a cached page must stop gameplay immediately');
+        assert.equal(game.canSave(), false);
+        assert.equal(held, true, 'the departing page must finish its active operation before releasing exclusivity');
+        finishConnection!();
+        await connection;
+        await waitUntil(() => !held);
+        await release;
+    } finally {
+        names.forEach((name, index) => {
+            if (descriptors[index]) Object.defineProperty(globalThis, name, descriptors[index]!);
+            else Reflect.deleteProperty(globalThis, name);
+        });
+        dom.window.close();
+    }
+});
+
+test('leaving a blocked page cancels its queued lock request without starting or writing', { timeout: 5000 }, async () => {
+    const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://fixture.test' });
+    const names = ['window', 'document', 'localStorage', 'indexedDB', 'navigator', 'setInterval', 'fetch'];
+    const descriptors = names.map(name => Object.getOwnPropertyDescriptor(globalThis, name));
+    let signal: AbortSignal | undefined, started = false, calls = 0;
+    try {
+        for (const [name, value] of Object.entries({
+            window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage,
+            indexedDB: new IDBFactory(), setInterval: () => 0,
+            navigator: { locks: { request(_name: string, options: LockOptions, callback: (lock: object | null) => unknown) {
+                if (options.ifAvailable) { callback(null); return Promise.resolve(); }
+                signal = options.signal;
+                return new Promise((_resolve, reject) => signal!.addEventListener('abort', () => reject(signal!.reason), { once: true }));
+            } } },
+            fetch: async () => { calls++; throw new Error('departed page must not prepare a profile'); },
+        })) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
+        const { CloudGame } = await import('../cloud-save/browser');
+        const game = new CloudGame();
+        void game.bootstrap().then(() => { started = true; });
+        assert.ok(signal, 'startup must enqueue a cancellable lock request');
+        dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: true }));
+        assert.equal(signal.aborted, true);
+        await waitUntil(() => !document.querySelector<HTMLButtonElement>('button[data-action="check"]')!.disabled);
+        assert.equal(started, false);
+        assert.equal(calls, 0);
+        assert.equal(game.canSave(), false);
+        assert.equal(game.canRun(), false);
+        await (game as any).action('check');
+        assert.equal(started, false, 'an obsolete page cannot restart through its retry button');
     } finally {
         names.forEach((name, index) => {
             if (descriptors[index]) Object.defineProperty(globalThis, name, descriptors[index]!);
