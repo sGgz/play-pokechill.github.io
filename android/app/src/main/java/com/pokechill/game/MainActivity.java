@@ -96,17 +96,8 @@ public final class MainActivity extends Activity {
         game.setWebChromeClient(new GameChrome());
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
         CookieManager.getInstance().setAcceptCookie(true);
-        android.content.pm.PackageInfo webViewPackage = WebView.getCurrentWebViewPackage();
-        if (webViewPackage != null && webViewPackage.versionName != null) {
-            try {
-                if (Integer.parseInt(webViewPackage.versionName.split("\\.")[0]) < 120) {
-                    new AlertDialog.Builder(this).setTitle("需要更新网页运行组件")
-                        .setMessage("请先更新 Android System WebView 或 Chrome 至 120 或更高版本，再打开游戏。游戏需要新版浏览器的本地存储和多会话保护能力。")
-                        .setPositiveButton("关闭", (dialog, which) -> finish()).show();
-                    return;
-                }
-            } catch (NumberFormatException ignored) { /* Unknown vendor version: let the game's capability checks report it. */ }
-        }
+        // Vendor package versions (e.g. Huawei 14.x) are not Chromium versions.
+        // Let the game verify storage and writer-lock support before allowing play.
         io.execute(() -> {
             try {
                 ReleaseManifest bundled;
