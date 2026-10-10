@@ -220,15 +220,17 @@ export class CloudGame {
 
     private async prepare(): Promise<void> {
         await this.acquireWriter();
+        let identity: CloudIdentity | undefined;
         try {
             this.profiles = new CloudStorage();
-            let identity: CloudIdentity | undefined;
+            this.message('正在确认登录玩家……');
             try { identity = await this.api.identity(); }
             catch (error) {
                 // Without a verified identity, continue only under the last local profile.
                 if (!(error instanceof CloudApiError)) throw error;
                 this.report(error);
             }
+            if (this.leaving) return;
             this.profileId = identity?.playerId || await this.profiles.getProfile() || 'player';
             await this.profiles.selectProfile(this.profileId);
             this.storage = this.profileId === 'player' ? this.profiles : new CloudStorage(this.profileId);
@@ -246,11 +248,15 @@ export class CloudGame {
             return;
         }
         rawPayload(readLocal()); // Invalid local data stays available for backup; do not run it.
-        await this.checkStartup();
+        // On failed authentication, offer the last local profile without immediately repeating the request.
+        if (!identity) return;
+        this.message('正在检查云端进度……');
+        await this.checkStartup(identity);
     }
 
-    private async connection(): Promise<string> {
-        const identity = await this.api.identity();
+    private async connection(startupIdentity?: CloudIdentity): Promise<string> {
+        const identity = startupIdentity || await this.api.identity();
+        if (this.leaving) throw new Error('游戏页面已离开，请重新进入。');
         if (identity.playerId !== this.profileId) {
             this.paused = true;
             try {
@@ -268,15 +274,15 @@ export class CloudGame {
         if (this.engine?.state.slotId && this.engine.state.slotId !== slot) {
             throw new Error('服务器云槽位与本机已关联槽位不同，请检查配置。');
         }
-        if (await this.api.status() !== slot) throw new Error('检查连接期间登录身份发生变化，请重试。');
+        if (!startupIdentity && await this.api.status() !== slot) throw new Error('检查连接期间登录身份发生变化，请重试。');
         this.playerName = identity.playerName;
         this.serverSlot = slot; this.loginRequired = false;
         return slot;
     }
 
-    private async checkStartup(): Promise<void> {
+    private async checkStartup(identity?: CloudIdentity): Promise<void> {
         try {
-            const slot = await this.connection();
+            const slot = await this.connection(identity);
             const local = rawPayload(readLocal());
             const remote = await this.api.read(slot);
             if (!local && localStorage.getItem('pokechillCloud:newGame')) {

@@ -172,7 +172,14 @@ export function createHandler(dependencies: {
                 if (request.method !== 'GET' && request.method !== 'HEAD') return json({ code: 'METHOD', message: '不支持此操作。' }, 405, { Allow: 'GET, HEAD' });
                 const asset = await env.ASSETS.fetch(request);
                 const response = new Response(asset.body, asset);
-                response.headers.set('Cache-Control', 'private, no-store');
+                let cache = 'private, no-store';
+                if (asset.ok || asset.status === 304) {
+                    if (/^\/(?:scripts\/.+\.js|(?:styles|cloud-save)\.css)$/.test(url.pathname)) {
+                        cache = /^[a-f0-9]{20}$/.test(url.searchParams.get('v') || '')
+                            ? 'private, max-age=31536000, immutable' : 'private, no-cache';
+                    } else if (/^\/(?:img|font)\//.test(url.pathname)) cache = 'private, max-age=86400';
+                }
+                response.headers.set('Cache-Control', cache);
                 response.headers.set('X-Content-Type-Options', 'nosniff');
                 response.headers.set('X-Frame-Options', 'DENY');
                 response.headers.set('Referrer-Policy', 'same-origin');

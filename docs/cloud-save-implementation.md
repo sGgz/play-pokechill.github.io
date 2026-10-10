@@ -32,6 +32,16 @@
 
 先以控制器测试模拟仅 `ifAvailable` 取锁被拒绝而正常请求可用的情况，确认旧代码无法启动；修复后通过。回归还覆盖真实占用时超时和重试、页面离开时立即停止、活动操作完成前不释放锁、离开受阻页面取消排队且不访问玩家 API。Node.js 24 下 `npm run verify` 全部通过，共 84 项测试，TypeScript、入口检查、构建与 Wrangler dry-run 成功。Playwright 本机真实 Chromium 在 390×844 视口验证同页脚本重复加载只有一把锁、双页面占用与重试、模拟历史缓存 pagehide 后交接、实际导航离开与返回；控制台只有空云槽位的预期 404。测试使用隔离假存档服务，未访问真实玩家存档，也未部署线上。
 
+### 2026-10-10 刷新后无云面板、长时间无法启动
+
+用户确认已部署上轮修复，新版卡住时没有云面板。真实 Chromium 中拦住 `img/icons/pokeball.svg` 的响应，再刷新到 DOM 就绪，稳定复现游戏未启动、面板不存在：旧启动逻辑等待 `window.load`，非关键图片未加载也会挡住游戏和云面板。改为 `DOMContentLoaded` 后，同一图片请求仍挂起时游戏已启动、云面板已创建。这个复现对应“没有面板”的症状；夸克原先的锁占用提示是否还有独立内核因素，不能据此排除。
+
+静态资源原本统一 `private, no-store`，每次刷新都重新传输。构建为所有脚本及两份样式添加统一源码哈希查询参数；经登录验证的版本地址允许浏览器私有长期缓存，图片与字体私有缓存一天，旧无版本脚本和样式每次重验证。首页、登录、构建信息、API 和静态错误响应仍不缓存，也不改变服务端登录门禁。新构建改变脚本地址，避免新版 HTML 混用旧脚本。启动复用已验证身份，直接读已认证槽位，从四次顺序请求减到两次；初次身份查询失败后直接提供明确继续最近本地玩家的入口，不再重复查询。
+
+Node.js 24 下完整 `npm run verify` 通过，共 86 项测试，新增覆盖缓存策略与未登录门禁、启动网络请求次数、身份失败时本地进度保留。真实浏览器 390×844 视口下保留本地初始宝可梦进度，连续刷新 20 次，每次仅一把已持有锁且没有遗留排队请求，全部脚本版本与 HTML 构建标识一致。使用独立持久浏览器配置关闭整个 Chromium 进程，再重新打开同一 fixture，已有初始宝可梦与存档保留，正常取得一把写入锁，未清缓存或网站数据。隔离本机假服务本次平均 940 ms、最大 1426 ms；这些数值不代表手机或线上网络速度。未访问真实玩家存档，未部署线上。
+
+慢图片与连续刷新检查保留在 `test/browser-refresh.smoke.js`，只允许隔离本机 fixture 地址。先 `npm run build`，在一个终端执行 `node --import tsx test/browser-fixture.ts`，另一个终端用 `playwright-cli --session refresh-smoke open http://127.0.0.1:3001` 后执行 `playwright-cli --session refresh-smoke run-code --filename test/browser-refresh.smoke.js`。可先在 fixture 选择初始宝可梦，以额外验证已有进度保留。运行时不要同时构建或删除 `dist`；结束后关闭 CLI 浏览器并停止 fixture。
+
 浏览器本地 JSON → IndexedDB 同步状态 / 恢复副本 → 同域 Cloudflare API → GitHub 私有仓库 `saves/<slot>.json`。
 
 复用主干的签名 Cookie、7 天会话、随机密码、原生登录限流、Origin 校验、GitHub UTF-8 编解码与原生 workerd fetch、blob SHA + revision 条件写入、不可变请求重试、恢复日志和同步状态机。认证 audience、Cookie、锁、数据库、Worker 和槽位均独立。

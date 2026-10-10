@@ -102,6 +102,29 @@ test('wrong passwords fail; correct login issues a protected cookie and a confir
     assert.deepEqual(f.stats(), { assets: 1, reads: 1 });
 });
 
+test('authenticated static assets can be reused while documents, errors and APIs stay uncached', async () => {
+    const f = fixture();
+    const cookie = await signedCookie(f);
+    for (const [path, policy] of [
+        ['/', 'private, no-store'], ['/index.html', 'private, no-store'], ['/login', 'private, no-store'],
+        ['/api/cloud-save/identity', 'private, no-store'], ['/build-info.json', 'private, no-store'],
+        ['/scripts/cloud-save.js?v=0123456789abcdef0123', 'private, max-age=31536000, immutable'],
+        ['/styles.css?v=0123456789abcdef0123', 'private, max-age=31536000, immutable'],
+        ['/scripts/cloud-save.js', 'private, no-cache'], ['/styles.css', 'private, no-cache'],
+        ['/img/pkmn/sprite/litten.png', 'private, max-age=86400'], ['/font/game.ttf', 'private, max-age=86400'],
+    ]) {
+        const response = await f.call(new Request(origin + path, { headers: { Cookie: cookie } }));
+        assert.equal(response.headers.get('Cache-Control'), policy, path);
+        if (path !== '/login') {
+            const anonymous = await f.call(new Request(origin + path));
+            assert.equal(anonymous.headers.get('Cache-Control'), 'private, no-store', 'cached asset policy must not bypass authorization');
+            assert.ok([303, 401].includes(anonymous.status), path);
+        }
+    }
+    f.env.ASSETS.fetch = async () => new Response('missing', { status: 404 });
+    assert.equal((await f.call(new Request(origin + '/img/missing.png', { headers: { Cookie: cookie } }))).headers.get('Cache-Control'), 'private, no-store');
+});
+
 test('cross-site and missing-Origin login/logout requests are rejected', async () => {
     const f = fixture();
     for (const path of ['/auth/login', '/auth/logout']) {

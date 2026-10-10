@@ -38,7 +38,10 @@ await build({
     define: { __GAME_VERSION__: JSON.stringify(gameVersion), __CLIENT_BUILD__: JSON.stringify(buildId) },
 });
 const html = await readFile(resolve(output, 'index.html'), 'utf8');
-await writeFile(resolve(output, 'index.html'), html.replace('content="development"', 'content="' + buildId + '"'), 'utf8');
+const versionedHtml = html.replace('content="development"', 'content="' + buildId + '"')
+    .replace(/\b(src|href)="(scripts\/[^"?]+\.js|(?:styles|cloud-save)\.css)"/g,
+        (_match, attribute, path) => `${attribute}="${path}?v=${buildId}"`);
+await writeFile(resolve(output, 'index.html'), versionedHtml, 'utf8');
 await writeFile(resolve(output, 'build-info.json'), JSON.stringify({ gameVersion, buildId }) + '\n', 'utf8');
 
 // Git retains both spellings; Windows checks out one. Map aliases to the actual output spelling.

@@ -10522,7 +10522,7 @@ window.addEventListener('beforeunload', function(event) {
 
 
 
-window.addEventListener('load', async function() {
+document.addEventListener('DOMContentLoaded', async function() {
     if (window.PokeChillCloud) await window.PokeChillCloud.bootstrap();
 
 

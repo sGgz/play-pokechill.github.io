@@ -6,7 +6,7 @@ import { CloudStorage, emptyState, payloadRaw } from '../cloud-save/storage';
 import { hashPayload, type RemoteSave, type SavePayload } from '../cloud-save/protocol';
 
 const { JSDOM } = createRequire(import.meta.url)('jsdom');
-test('the controller persists checkbox choices and switches players before any cloud upload', async () => {
+test('the controller persists checkbox choices and switches players before any cloud upload', { timeout: 5000 }, async () => {
     const dom = new JSDOM('<!doctype html><html><body><button id="menu-button" class="menu-button-open"></button><div id="menu-items"></div></body></html>', { url: 'https://fixture.test' });
     const originalFetch = globalThis.fetch;
     const globals = ['window', 'document', 'localStorage', 'indexedDB', 'navigator', 'setInterval'];
@@ -84,6 +84,47 @@ test('the controller persists checkbox choices and switches players before any c
     } finally {
         globalThis.fetch = originalFetch;
         globals.forEach((name, index) => {
+            if (descriptors[index]) Object.defineProperty(globalThis, name, descriptors[index]!);
+            else Reflect.deleteProperty(globalThis, name);
+        });
+        dom.window.close();
+    }
+});
+
+test('failed startup identity is not requested twice and the saved local profile remains available', { timeout: 5000 }, async () => {
+    const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://fixture.test' });
+    const names = ['window', 'document', 'localStorage', 'indexedDB', 'navigator', 'setInterval', 'fetch'];
+    const descriptors = names.map(name => Object.getOwnPropertyDescriptor(globalThis, name));
+    let requests = 0, started = false;
+    const raw = JSON.stringify({ saved: { version: 5, firstTimePlaying: false }, team: {} });
+    try {
+        for (const [name, value] of Object.entries({
+            window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage,
+            indexedDB: new IDBFactory(), setInterval: () => 0,
+            navigator: { locks: { request(_name: string, _options: unknown, callback: (lock: object) => unknown) { callback({}); return Promise.resolve(); } } },
+            fetch: async (input: unknown) => {
+                requests++;
+                assert.ok(String(input).endsWith('/identity'), 'failed startup must not continue with unverified cloud access');
+                return Response.json({ code: 'LOGIN_REQUIRED', message: '请重新登录' }, { status: 401 });
+            },
+        })) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
+        localStorage.setItem('gameData', raw);
+        const { CloudGame } = await import('../cloud-save/browser');
+        const game = new CloudGame();
+        void game.bootstrap().then(() => { started = true; game.started(); });
+        await waitUntil(() => !document.querySelector<HTMLButtonElement>('button[data-action="check"]')!.disabled);
+        assert.equal(requests, 1);
+        assert.equal(started, false, 'using the last local player requires a deliberate choice');
+        const offline = document.querySelector<HTMLButtonElement>('button[data-action="continue"]')!;
+        assert.equal(offline.hidden, false);
+        assert.equal(offline.disabled, false);
+        offline.click();
+        await waitUntil(() => started);
+        assert.equal(game.canRun(), true);
+        assert.equal(localStorage.getItem('gameData'), raw);
+        assert.equal(requests, 1);
+    } finally {
+        names.forEach((name, index) => {
             if (descriptors[index]) Object.defineProperty(globalThis, name, descriptors[index]!);
             else Reflect.deleteProperty(globalThis, name);
         });
@@ -169,6 +210,7 @@ test('one mobile page starts even when the browser denies only ifAvailable reque
     let held = false, started = false, saved = 0, release: Promise<unknown> | undefined;
     let finishConnection: (() => void) | undefined;
     let connectionStarted = false;
+    let startupIdentities = 0, startupStatuses = 0;
     const slot = crypto.randomUUID();
     try {
         for (const [name, value] of Object.entries({
@@ -185,6 +227,8 @@ test('one mobile page starts even when the browser denies only ifAvailable reque
                 query: async () => ({ held: held ? [{ name: 'pokechill-game-writer' }] : [], pending: [] }),
             } },
             fetch: async (input: unknown) => {
+                if (!started && String(input).endsWith('/identity')) startupIdentities++;
+                if (!started && String(input).endsWith('/status')) startupStatuses++;
                 if (String(input).endsWith('/identity') && started) {
                     connectionStarted = true;
                     await new Promise<void>(resolve => { finishConnection = resolve; });
@@ -201,6 +245,8 @@ test('one mobile page starts even when the browser denies only ifAvailable reque
         void game.bootstrap().then(() => { started = true; game.started(); });
         await waitUntil(() => !document.querySelector<HTMLButtonElement>('button[data-action="check"]')!.disabled);
         assert.equal(started, true, 'a single page must start when a normal lock request can succeed');
+        assert.equal(startupIdentities, 1, 'startup must reuse its verified identity instead of repeating network checks');
+        assert.equal(startupStatuses, 0, 'reading the authenticated cloud slot already checks availability');
         assert.equal(held, true);
         assert.equal(game.canRun(), true);
         const connection = (game as any).action('check');
