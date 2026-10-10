@@ -51,7 +51,7 @@ export class CloudGame {
         if (!this.ready) {
             this.ready = new Promise<void>(resolve => { this.resume = resolve; });
             this.mount();
-            void this.prepare().catch(error => this.report(error));
+            void this.prepareStartup();
         }
         return this.ready;
     }
@@ -100,9 +100,31 @@ export class CloudGame {
             menu.insertBefore(entry, menu.children[1] ?? null);
             panel.addEventListener('toggle', () => entry.setAttribute('aria-expanded', String(panel.open)));
         }
+        const menuIcon = document.querySelector<SVGElement>('#menu-button > svg');
+        menuIcon?.setAttribute('role', 'button');
+        menuIcon?.setAttribute('tabindex', '0');
+        menuIcon?.setAttribute('aria-label', '打开菜单或云存档');
+        menuIcon?.addEventListener('keydown', event => {
+            if (this.canRun() && ['Enter', ' '].includes(event.key)) {
+                event.preventDefault();
+                menuIcon.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            }
+        });
         for (const name of ['click', 'pointerdown', 'keydown']) {
             window.addEventListener(name, event => {
-                if ((this.paused || this.stopped || !this.running) && !panel.contains(event.target as Node)) {
+                if (!this.canRun() && !panel.contains(event.target as Node)) {
+                    const target = event.target as Element;
+                    const cloudEntry = target.closest?.('#menu-button > svg, #menu-item-cloud-save');
+                    if (cloudEntry) {
+                        if (name === 'click' || (name === 'keydown' && ['Enter', ' '].includes((event as KeyboardEvent).key))) {
+                            event.preventDefault(); event.stopImmediatePropagation();
+                            panel.open = true;
+                            document.getElementById('menu-button')?.classList.remove('menu-button-open');
+                            panel.querySelector<HTMLElement>('summary')?.focus();
+                        }
+                        // Keep pointerdown uncancelled so touch browsers still dispatch click.
+                        return;
+                    }
                     event.preventDefault(); event.stopImmediatePropagation();
                 }
             }, true);
@@ -129,6 +151,14 @@ export class CloudGame {
         this.render();
     }
 
+    private async prepareStartup(): Promise<void> {
+        if (this.busy) return;
+        this.busy = true; this.render();
+        try { await this.prepare(); }
+        catch (error) { this.report(error); }
+        finally { this.busy = false; this.render(); }
+    }
+
     private async prepare(): Promise<void> {
         if (!navigator.locks) throw new Error('此浏览器不支持多标签保护，请使用新版 Chrome、Edge、Firefox 或 Safari。');
         const held = await new Promise<boolean>((resolve, reject) => {
@@ -138,7 +168,7 @@ export class CloudGame {
                 return new Promise<void>(() => {});
             }).catch(reject);
         });
-        if (!held) throw new Error('游戏已在另一个标签页打开。请先关闭它，再刷新这里。');
+        if (!held) throw new Error('游戏已在本浏览器的另一个标签页打开，也可能在其他窗口或标签组中。请关闭旧游戏页面，再点“重试打开游戏”。这只检查本机浏览器，不受其他设备影响。');
         try {
             this.profiles = new CloudStorage();
             let identity: CloudIdentity | undefined;
@@ -384,6 +414,7 @@ export class CloudGame {
             return;
         }
         if (name === 'continue') { try { this.startLocal(); } catch (error) { this.report(error); } return; }
+        if (name === 'check' && !this.writer) { await this.prepareStartup(); return; }
         const automatic = name === 'automatic' && (document.getElementById('pc-cloud-auto') as HTMLInputElement).checked;
         await this.guarded(async () => {
             if (name === 'check') {
@@ -434,7 +465,7 @@ export class CloudGame {
         const panel = document.getElementById('pc-cloud');
         if (!panel) return;
         const state = this.engine?.state;
-        document.getElementById('pc-cloud-summary')!.textContent = this.stopped ? '已暂停' : state?.hasConflict ? '进度冲突' : state?.base ? '已关联' : '本地模式';
+        document.getElementById('pc-cloud-summary')!.textContent = this.stopped ? '已暂停' : !this.writer ? this.busy ? '正在检查' : '等待打开' : state?.hasConflict ? '进度冲突' : state?.base ? '已关联' : '本地模式';
         const menuStatus = document.getElementById('pc-cloud-menu-status');
         if (menuStatus) menuStatus.textContent = document.getElementById('pc-cloud-summary')!.textContent;
         document.getElementById('pc-cloud-status')!.textContent = this.status;
@@ -443,6 +474,8 @@ export class CloudGame {
         for (const button of panel.querySelectorAll<HTMLButtonElement>('button[data-action]')) {
             const name = button.dataset.action;
             button.disabled = this.busy || (name !== 'export' && name !== 'backups' && name !== 'continue' && (!this.writer || !this.profileReady || !!this.blocked));
+            if (name === 'check' && !this.writer) button.disabled = this.busy;
+            if (name === 'check') button.textContent = this.writer ? '检查连接' : '重试打开游戏';
             if (name === 'continue') {
                 button.hidden = (!this.resume && !this.stopped) || !this.writer || !this.profileReady || this.installPending || !!localStorage.getItem('pokechillCloud:install');
                 button.textContent = this.stopped ? '重新进入游戏' : '继续本地游戏';

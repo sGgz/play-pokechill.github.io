@@ -90,3 +90,64 @@ test('the controller persists checkbox choices and switches players before any c
         dom.window.close();
     }
 });
+
+test('a blocked mobile page can reopen cloud controls and retry after the other tab closes', { timeout: 5000 }, async () => {
+    const dom = new JSDOM('<!doctype html><html><body><div id="menu-button"><svg><path id="menu-icon" /></svg><div id="menu-items"></div></div><button id="game-action">游戏按钮</button></body></html>', { url: 'https://fixture.test' });
+    const names = ['window', 'document', 'localStorage', 'indexedDB', 'navigator', 'setInterval', 'fetch'];
+    const descriptors = names.map(name => Object.getOwnPropertyDescriptor(globalThis, name));
+    const slot = crypto.randomUUID();
+    let otherTabOpen = true, requests = 0, gameClicks = 0, started = false;
+    try {
+        for (const [name, value] of Object.entries({
+            window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage,
+            indexedDB: new IDBFactory(), setInterval: () => 0,
+            navigator: { locks: { request(_name: string, _options: unknown, callback: (lock: object | null) => unknown) {
+                requests++; callback(otherTabOpen ? null : {}); return Promise.resolve();
+            } } },
+            fetch: async (input: unknown) => Response.json(String(input).endsWith('/identity')
+                ? { playerId: 'player', primaryPlayerId: 'player', playerName: '我', slotId: slot }
+                : String(input).endsWith('/status') ? { slotId: slot }
+                : { code: 'EMPTY_SLOT', message: 'empty' }, { status: String(input).includes('/slots/') ? 404 : 200 }),
+        })) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
+        const { CloudGame } = await import('../cloud-save/browser');
+        const game = new CloudGame();
+        void game.bootstrap().then(() => { started = true; game.started(); });
+        await new Promise(resolve => setTimeout(resolve, 20));
+        const panel = document.getElementById('pc-cloud') as HTMLDetailsElement;
+        assert.match(document.getElementById('pc-cloud-status')!.textContent!, /另一个标签页/);
+        assert.equal(game.canSave(), false);
+        document.getElementById('game-action')!.addEventListener('click', () => { gameClicks++; });
+        const pointer = new dom.window.Event('pointerdown', { bubbles: true, cancelable: true });
+        document.getElementById('menu-icon')!.dispatchEvent(pointer);
+        assert.equal(pointer.defaultPrevented, false, 'touch pointerdown must still allow the browser to dispatch click');
+        panel.open = false;
+        document.getElementById('menu-icon')!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+        assert.equal(panel.open, true, 'the mobile Pokémon icon must reopen the panel while the game is blocked');
+        panel.open = false;
+        document.getElementById('menu-item-cloud-save')!.click();
+        assert.equal(panel.open, true, 'the cloud menu entry must remain reachable while blocked');
+        panel.open = false;
+        document.querySelector('#menu-button > svg')!.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        assert.equal(panel.open, true, 'keyboard activation must reach cloud controls while blocked');
+        document.getElementById('game-action')!.click();
+        assert.equal(gameClicks, 0, 'reopening cloud controls must not enable gameplay without the lock');
+        const retry = panel.querySelector<HTMLButtonElement>('button[data-action="check"]')!;
+        assert.equal(retry.disabled, false);
+        retry.click();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        assert.equal(started, false);
+        assert.equal(game.canSave(), false);
+        otherTabOpen = false;
+        retry.click();
+        await new Promise(resolve => setTimeout(resolve, 40));
+        assert.equal(started, true);
+        assert.equal(requests, 3, 'retry must attempt the real writer lock again without stealing it');
+        assert.equal(game.canSave(), true);
+    } finally {
+        names.forEach((name, index) => {
+            if (descriptors[index]) Object.defineProperty(globalThis, name, descriptors[index]!);
+            else Reflect.deleteProperty(globalThis, name);
+        });
+        dom.window.close();
+    }
+});
