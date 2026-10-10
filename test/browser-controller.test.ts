@@ -6,6 +6,8 @@ import { CloudStorage, emptyState, payloadRaw } from '../cloud-save/storage';
 import { hashPayload, type RemoteSave, type SavePayload } from '../cloud-save/protocol';
 
 const { JSDOM } = createRequire(import.meta.url)('jsdom');
+// esbuild supplies this constant to the real browser bundle.
+Object.defineProperty(globalThis, '__GAME_VERSION__', { configurable: true, value: '5' });
 test('the controller persists checkbox choices and switches players before any cloud upload', { timeout: 5000 }, async () => {
     const dom = new JSDOM('<!doctype html><html><body><button id="menu-button" class="menu-button-open"></button><div id="menu-items"></div></body></html>', { url: 'https://fixture.test' });
     const originalFetch = globalThis.fetch;
@@ -56,6 +58,24 @@ test('the controller persists checkbox choices and switches players before any c
             assert.equal(checkbox.checked, selected);
             assert.equal((await storage.getState()).autoSync, selected);
         }
+        dom.window.saveGame = () => {};
+        assert.equal(game.resourceStatus(), 'ready');
+        const beforeUpdate = localStorage.getItem('gameData');
+        assert.equal(await game.prepareResourceReload(), true);
+        assert.equal(game.canRun(), false, 'gameplay must pause until the shell switches complete resource versions');
+        assert.equal(await game.prepareResourceReload(), false, 'only one update preparation may hold the pause');
+        assert.equal(localStorage.getItem('gameData'), beforeUpdate);
+        assert.ok((await storage.allBackups()).some(backup => backup && typeof backup === 'object'
+            && 'reason' in backup && backup.reason === 'before-resource-update'));
+        game.cancelResourceReload();
+        assert.equal(game.canRun(), true, 'a failed native activation must allow the old game to resume');
+        let finishCapture!: () => void;
+        (game as any).captureQueue = new Promise<void>(resolve => { finishCapture = resolve; });
+        const cancelledReload = game.prepareResourceReload();
+        game.cancelResourceReload();
+        finishCapture();
+        assert.equal(await cancelledReload, false, 'a timed-out preparation must not authorize a later native version switch');
+        assert.equal(game.canRun(), true);
         let uploads = 0, reloads = 0, saves = 0;
         const friend = crypto.randomUUID(), friendSlot = crypto.randomUUID();
         const mine = localStorage.getItem('gameData');

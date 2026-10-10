@@ -174,7 +174,9 @@ export function createHandler(dependencies: {
                 const response = new Response(asset.body, asset);
                 let cache = 'private, no-store';
                 if (asset.ok || asset.status === 304) {
-                    if (/^\/(?:scripts\/.+\.js|(?:styles|cloud-save)\.css)$/.test(url.pathname)) {
+                    if (/^\/updates\/objects\/[a-f0-9]{64}$/.test(url.pathname)) {
+                        cache = 'private, max-age=31536000, immutable';
+                    } else if (/^\/(?:scripts\/.+\.js|(?:styles|cloud-save)\.css)$/.test(url.pathname)) {
                         cache = /^[a-f0-9]{20}$/.test(url.searchParams.get('v') || '')
                             ? 'private, max-age=31536000, immutable' : 'private, no-cache';
                     } else if (/^\/(?:img|font)\//.test(url.pathname)) cache = 'private, max-age=86400';

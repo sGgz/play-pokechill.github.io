@@ -1,0 +1,44 @@
+plugins { id 'com.android.application' }
+
+def configurationFile = rootProject.file('app/src/main/assets/android-config.json')
+def configuration = configurationFile.exists() ? new groovy.json.JsonSlurper().parse(configurationFile) : [origin: 'https://game.example.com']
+def signingFile = rootProject.file('signing.local.properties')
+def signing = new Properties()
+if (signingFile.exists()) signingFile.withInputStream { signing.load(it) }
+
+android {
+    namespace 'com.pokechill.game'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.pokechill.game'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+        buildConfigField 'String', 'GAME_ORIGIN', groovy.json.JsonOutput.toJson(configuration.origin)
+    }
+    buildFeatures { buildConfig true }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    if (signingFile.exists()) {
+        signingConfigs {
+            privateRelease {
+                storeFile rootProject.file(signing.storeFile)
+                storePassword signing.storePassword
+                keyAlias signing.keyAlias
+                keyPassword signing.keyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (signingFile.exists()) signingConfig signingConfigs.privateRelease
+        }
+    }
+    testOptions { unitTests.returnDefaultValues = true }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+}

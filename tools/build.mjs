@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { resolve, relative } from 'node:path';
 import { build } from 'esbuild';
+import { createWebRelease } from './web-release.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = resolve(root, 'dist');
@@ -22,8 +23,10 @@ async function hashSource(directory) {
         else { hash.update(relative(root, path)); hash.update(await readFile(path)); }
     }
 }
-for (const name of ['scripts', 'cloud-save']) await hashSource(resolve(root, name));
-for (const name of ['index.html', 'styles.css', 'cloud-save.css']) hash.update(await readFile(resolve(root, name)));
+for (const name of ['scripts', 'cloud-save', 'img', 'font']) await hashSource(resolve(root, name));
+for (const name of ['index.html', 'styles.css', 'cloud-save.css', 'tools/build.mjs', 'tools/web-release.mjs', 'package-lock.json']) {
+    hash.update(name); hash.update(await readFile(resolve(root, name)));
+}
 const versionMatch = (await readFile(resolve(root, 'scripts/script.js'), 'utf8')).match(/saved\.version = ([0-9.]+)\s/);
 if (!versionMatch) throw new Error('Cannot identify PokeChill game version');
 const gameVersion = String(Number(versionMatch[1]));
@@ -61,12 +64,15 @@ async function listImages(directory) {
 }
 await listImages(resolve(output, 'img'));
 const redirects = [];
+const aliases = [];
 for (const variants of groups.values()) {
     if (variants.length < 2) continue;
     const present = actual.filter(path => path.toLowerCase() === variants[0].toLowerCase());
     for (const alias of variants.filter(path => !present.includes(path))) {
         redirects.push('/' + alias + ' /' + present[0] + ' 302');
+        aliases.push({ from: alias, to: present[0] });
     }
 }
 await writeFile(resolve(output, '_redirects'), redirects.join('\n') + '\n', 'utf8');
-console.log(`Built PokeChill ${gameVersion} (${buildId}); ${redirects.length} Windows image aliases.`);
+const release = await createWebRelease(output, { gameVersion, buildId, aliases });
+console.log(`Built PokeChill ${gameVersion} (${buildId}); ${redirects.length} Windows image aliases; ${release.files.length} update entries.`);

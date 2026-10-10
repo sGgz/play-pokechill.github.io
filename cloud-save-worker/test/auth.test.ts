@@ -108,6 +108,8 @@ test('authenticated static assets can be reused while documents, errors and APIs
     for (const [path, policy] of [
         ['/', 'private, no-store'], ['/index.html', 'private, no-store'], ['/login', 'private, no-store'],
         ['/api/cloud-save/identity', 'private, no-store'], ['/build-info.json', 'private, no-store'],
+        ['/updates/latest.json', 'private, no-store'],
+        ['/updates/objects/' + 'a'.repeat(64), 'private, max-age=31536000, immutable'],
         ['/scripts/cloud-save.js?v=0123456789abcdef0123', 'private, max-age=31536000, immutable'],
         ['/styles.css?v=0123456789abcdef0123', 'private, max-age=31536000, immutable'],
         ['/scripts/cloud-save.js', 'private, no-cache'], ['/styles.css', 'private, no-cache'],

@@ -8,6 +8,7 @@ Monsters and Chill
 - [部署与日常使用手册](docs/cloud-save-deployment.md)：从账号配置到自己的域名，再到两台设备往返验收。
 - [架构、接入点与验收记录](docs/cloud-save-implementation.md)。
 - [简体中文译名来源、维护与手机界面](docs/localization.md)。
+- [安卓 APK、本地资源与在线热更新](docs/android.md)：首次安装、签名密钥、后续发布与恢复。
 
 需要 Node.js 24 LTS 和 Git。在本项目根目录运行：
 

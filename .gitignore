@@ -10,3 +10,8 @@ test-results/
 output/
 cloud-save-worker/.local/
 .local/
+android/.gradle/
+android/local.properties
+android/signing.local.properties
+android/app/src/main/assets/
+android/**/build/

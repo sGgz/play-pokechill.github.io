@@ -38,6 +38,10 @@ export class CloudGame {
     private stopped = false;
     private installPending = false;
     private busy = false;
+    private resourceReload = false;
+    private resourceWasPaused = false;
+    private resourceStartupReleased = false;
+    private resourceReloadGeneration = 0;
     private blocked = '';
     private loginRequired = false;
     private serverSlot: string | null = null;
@@ -50,6 +54,33 @@ export class CloudGame {
     canSave(): boolean { return this.writer && this.profileReady && this.running && !this.stopped; }
     canRun(): boolean { return this.writer && this.profileReady && this.running && !this.paused && !this.stopped; }
     started(): void { this.running = true; this.render(); }
+
+    // The Android shell polls this without exposing a JavaScript/native bridge.
+    resourceStatus(): string { return this.running && this.profileReady ? 'ready' : this.resourceStartupReleased ? 'starting' : 'waiting'; }
+
+    async prepareResourceReload(): Promise<boolean> {
+        if (this.busy || this.leaving || this.installPending || !this.profileReady || this.resourceReload) return false;
+        this.resourceWasPaused = this.paused;
+        const generation = ++this.resourceReloadGeneration;
+        this.resourceReload = true;
+        this.paused = true;
+        try {
+            if (this.canSave()) window.saveGame();
+            await this.captureQueue;
+            await this.engine?.wait();
+            if (generation !== this.resourceReloadGeneration || !this.resourceReload) return false;
+            await this.storage.backup(readLocal(), null, 'before-resource-update');
+            return generation === this.resourceReloadGeneration && this.resourceReload;
+        } catch (error) {
+            if (generation === this.resourceReloadGeneration) { this.cancelResourceReload(); this.report(error); }
+            return false;
+        }
+    }
+
+    cancelResourceReload(): void {
+        this.resourceReloadGeneration++;
+        if (this.resourceReload) { this.resourceReload = false; this.paused = this.resourceWasPaused; }
+    }
 
     bootstrap(): Promise<void> {
         if (!this.ready) {
@@ -161,14 +192,14 @@ export class CloudGame {
         });
         setInterval(() => {
             if (this.engine?.state.autoSync && this.running && !this.stopped && !this.busy && !this.blocked
-                && !this.loginRequired && !this.engine.state.hasConflict
+                && !this.loginRequired && !this.resourceReload && !this.engine.state.hasConflict
                 && Date.now() >= Math.max(this.lastAttempt + SYNC_INTERVAL, this.retryAt)) void this.action('sync');
         }, 15000);
         this.render();
     }
 
     private async prepareStartup(): Promise<void> {
-        if (this.busy || this.leaving) return;
+        if (this.busy || this.leaving || this.resourceReload) return;
         this.busy = true; this.render();
         try { await this.prepare(); }
         catch (error) { this.report(error); }
@@ -309,8 +340,13 @@ export class CloudGame {
     }
 
     private startLocal(): void {
+        if (this.resourceReload) throw new Error('正在准备应用更新，请稍候。');
         if (this.leaving || !this.writer || !this.profileReady || this.installPending || localStorage.getItem('pokechillCloud:install')) throw new Error('请先完成玩家切换或本地存档恢复，导出备份并释放空间后刷新。');
-        rawPayload(readLocal());
+        const local = rawPayload(readLocal());
+        if (local && compareVersions(payloadVersion(local), __GAME_VERSION__) > 0) {
+            throw new Error('本地存档来自更新的游戏版本，请先更新游戏资源；原存档和恢复备份保留。');
+        }
+        this.resourceStartupReleased = true;
         this.resume?.(); this.resume = undefined;
         if (this.running && this.stopped) window.location.reload();
         if (!this.engine?.state.hasConflict && !this.blocked) (document.getElementById('pc-cloud') as HTMLDetailsElement).open = false;
@@ -437,7 +473,7 @@ export class CloudGame {
     }
 
     private async guarded(operation: () => Promise<void>): Promise<void> {
-        if (this.busy || this.leaving) return;
+        if (this.busy || this.leaving || this.resourceReload) return;
         this.busy = true; this.render();
         try {
             if (this.installPending) throw new Error('存档恢复尚未完成，请导出备份、释放空间后刷新。');
