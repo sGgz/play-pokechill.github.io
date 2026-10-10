@@ -60,9 +60,22 @@
 .pc-cloud [hidden] { display: none; }
 .pc-cloud__time { color: #d1c4a1; font-size: 12px; }
 .pc-cloud__body p, .pc-cloud__body span { user-select: text; -webkit-user-select: text; }
-@media (max-width: 640px) {
-    .pc-cloud { right: 8px; top: 8px; }
-    .pc-cloud[open] { width: calc(100vw - 16px); }
-    .pc-cloud summary { padding: 5px 10px; }
-    .pc-cloud__body { padding: 14px; }
+.pc-cloud__entry { font: inherit; color: inherit; padding: 4px; letter-spacing: 0; }
+.pc-cloud__entry .pc-cloud__entry-icon { height: 2rem; font-size: 2.2rem; line-height: 1; color: var(--light2); background: none; border: 0; }
+.pc-cloud__entry small { font-size: 9px; line-height: 1.2; margin-top: 3px; opacity: 0.75; }
+@media (max-width: 1000px) {
+    .pc-cloud:not([open]) { display: none; }
+    .pc-cloud[open] {
+        top: max(12px, env(safe-area-inset-top));
+        right: max(8px, env(safe-area-inset-right));
+        left: max(8px, env(safe-area-inset-left));
+        width: auto;
+        max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 16px 60px #0008;
+    }
+    .pc-cloud summary { padding: 11px 14px; flex-shrink: 0; list-style: none; min-height: 44px; }
+    .pc-cloud summary::after { content: '收起 ×'; float: right; color: var(--cloud-accent); }
+    .pc-cloud__body { padding: 14px; margin-top: 4px; min-height: 0; overflow-y: auto; }
 }

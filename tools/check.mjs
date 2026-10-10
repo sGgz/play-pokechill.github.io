@@ -13,6 +13,6 @@ async function check(directory) {
 for (const dir of ['scripts', 'tools', 'cloud-save-worker/scripts']) await check(resolve(root, dir));
 const html = await readFile(resolve(root, 'index.html'), 'utf8');
 for (const match of html.matchAll(/<script src="([^"]+)"/g)) {
-    if (match[1] !== 'scripts/cloud-save.js') await readFile(resolve(root, match[1]));
+    if (!['scripts/cloud-save.js', 'scripts/zh-cn.js'].includes(match[1])) await readFile(resolve(root, match[1]));
 }
 console.log('Game and tooling JavaScript syntax / entry references checked.');

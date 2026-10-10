@@ -19,8 +19,8 @@ async function ask(label, fallback, valid) {
     }
 }
 try {
-    console.log('此向导只填写公开配置，不需要 GitHub token 或游戏密码。直接回车使用方括号内的值。');
-    const domain = await ask('游戏域名（不带 https://）', previous?.vars.ALLOWED_ORIGIN?.replace('https://', '') || 'game.example.com',
+    console.log('此向导填写本机部署配置，不需要 GitHub token 或游戏密码。配置含真实域名，请勿提交到公共仓库。直接回车使用方括号内的值。');
+    const domain = await ask('游戏域名（不带 https://）', previous?.vars.ALLOWED_ORIGIN?.replace('https://', '') || '',
         value => /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i.test(value));
     const owner = await ask('GitHub 用户名', previous?.vars.GITHUB_OWNER || 'sGgz', value => /^[a-z0-9][a-z0-9-]*$/i.test(value));
     const repo = await ask('私有存档仓库名', previous?.vars.GITHUB_SAVE_REPO || 'pokechill-save', value => /^[\w.-]+$/.test(value));

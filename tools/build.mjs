@@ -29,6 +29,10 @@ if (!versionMatch) throw new Error('Cannot identify PokeChill game version');
 const gameVersion = String(Number(versionMatch[1]));
 const buildId = hash.digest('hex').slice(0, 20);
 await build({
+    entryPoints: [resolve(root, 'scripts/i18n/browser.mjs')], outfile: resolve(output, 'scripts/zh-cn.js'),
+    bundle: true, format: 'iife', platform: 'browser', target: 'es2022', minify: true,
+});
+await build({
     entryPoints: [resolve(root, 'cloud-save/browser.ts')], outfile: resolve(output, 'scripts/cloud-save.js'),
     bundle: true, format: 'iife', platform: 'browser', target: 'es2022', minify: true,
     define: { __GAME_VERSION__: JSON.stringify(gameVersion), __CLIENT_BUILD__: JSON.stringify(buildId) },

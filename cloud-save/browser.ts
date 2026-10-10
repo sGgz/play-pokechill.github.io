@@ -81,6 +81,20 @@ export class CloudGame {
             </div><p class="pc-cloud__time">登录过期后，在新标签页重新登录，再回这里检查连接。不要刷新未同步的游戏。</p>
             </section>`;
         document.body.appendChild(panel);
+        const menu = document.getElementById('menu-items');
+        if (menu) {
+            const entry = document.createElement('button');
+            entry.id = 'menu-item-cloud-save'; entry.className = 'menu-item pc-cloud__entry'; entry.type = 'button';
+            entry.setAttribute('aria-controls', 'pc-cloud'); entry.setAttribute('aria-expanded', 'true');
+            entry.innerHTML = '<span class="pc-cloud__entry-icon" aria-hidden="true">☁</span><span>云存档</span><small id="pc-cloud-menu-status">正在检查</small>';
+            entry.addEventListener('click', () => {
+                panel.open = true;
+                document.getElementById('menu-button')?.classList.remove('menu-button-open');
+                panel.querySelector<HTMLElement>('summary')?.focus();
+            });
+            menu.insertBefore(entry, menu.children[1] ?? null);
+            panel.addEventListener('toggle', () => entry.setAttribute('aria-expanded', String(panel.open)));
+        }
         for (const name of ['click', 'pointerdown', 'keydown']) {
             window.addEventListener(name, event => {
                 if ((this.paused || this.stopped || !this.running) && !panel.contains(event.target as Node)) {
@@ -384,6 +398,8 @@ export class CloudGame {
         if (!panel) return;
         const state = this.engine?.state;
         document.getElementById('pc-cloud-summary')!.textContent = this.stopped ? '已暂停' : state?.hasConflict ? '进度冲突' : state?.base ? '已关联' : '本地模式';
+        const menuStatus = document.getElementById('pc-cloud-menu-status');
+        if (menuStatus) menuStatus.textContent = document.getElementById('pc-cloud-summary')!.textContent;
         document.getElementById('pc-cloud-status')!.textContent = this.status;
         document.getElementById('pc-cloud-time')!.textContent = state?.base ? '云端确认时间：' + new Date(state.base.serverSavedAt).toLocaleString() : '尚未确认云端保存';
         for (const button of panel.querySelectorAll<HTMLButtonElement>('button[data-action]')) {

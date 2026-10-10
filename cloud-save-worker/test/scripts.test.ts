@@ -52,14 +52,14 @@ async function configure(script: string, answers: string[]): Promise<void> {
         child.on('exit', code => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(errors || 'setup failed')); });
     });
 }
-test('setup generates only public config and preserves the cloud slot when rerun', async () => {
+test('setup requires a domain and preserves the local deployment config and cloud slot when rerun', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'pokechill-setup-test-'));
     try {
         await mkdir(path.join(dir, 'scripts'));
         const script = path.join(dir, 'scripts', 'setup.mjs');
         await copyFile(new URL('../scripts/setup.mjs', import.meta.url), script);
         await copyFile(new URL('../wrangler.jsonc', import.meta.url), path.join(dir, 'wrangler.jsonc'));
-        await configure(script, ['', 'test-owner', '', '']);
+        await configure(script, ['game.example.com', 'test-owner', '', '']);
         const config = JSON.parse(await readFile(path.join(dir, 'wrangler.local.json'), 'utf8'));
         assert.equal(config.vars.ALLOWED_ORIGIN, 'https://game.example.com');
         assert.equal(config.routes[0].custom_domain, true);

@@ -137,7 +137,7 @@ function tooltipData(category, ttdata){
         if (listName === "uncommon") { tag = `<span>Uncommon</span>`; }
         div.className = "area-preview";
         if (item.type!=="tm") div.innerHTML = `<img style="scale:2" src="img/items/${item.id}.png">` + tag;
-        if (item.type=="tm") div.innerHTML = `<img style="scale:2" src="img/items/tm${format(move[item.move].type)}.png">` + tag;
+        if (item.type=="tm") div.innerHTML = `<img style="scale:2" src="img/items/tm${formatEnglish(move[item.move].type)}.png">` + tag;
         document.getElementById("area-preview-items").appendChild(div);
         }}
 
@@ -207,7 +207,7 @@ function tooltipData(category, ttdata){
         else {div.dataset.pkmn = i.id;}
         div.className = "area-preview";
         if (i.type!=="tm") div.innerHTML = `<img style="scale:2" src="img/${meow}/${i.id}.png">`;
-        if (i.type=="tm") div.innerHTML = `<img style="scale:2" src="img/${meow}/tm${format(move[i.move].type)}.png">` + tag;
+        if (i.type=="tm") div.innerHTML = `<img style="scale:2" src="img/${meow}/tm${formatEnglish(move[i.move].type)}.png">` + tag;
         if (meow == `pkmn/sprite`) div.innerHTML = `<img style="scale:1" src="img/${meow}/${i.id}.png">`;
         document.getElementById("area-preview-items").appendChild(div);
         }
@@ -236,7 +236,7 @@ function tooltipData(category, ttdata){
                 } else {
                     div.dataset.item = reward.item;
                     imgPath = itemData.type === "tm" 
-                        ? `items/tm${format(move[itemData.move].type)}` 
+                        ? `items/tm${formatEnglish(move[itemData.move].type)}`
                         : `items/${reward.item}`;
                     scale = 2;
                 }
@@ -908,7 +908,7 @@ frontierArray.sort((a, b) => a.data.tier - b.data.tier);
 
         document.getElementById("tooltipTop").style.display = `inline`
         document.getElementById("tooltipTitle").style.display = `inline`
-        document.getElementById("tooltipTop").innerHTML = `<img src="img/items/tm${format(move[ttdata].type)}.png">`
+        document.getElementById("tooltipTop").innerHTML = `<img src="img/items/tm${formatEnglish(move[ttdata].type)}.png">`
         document.getElementById("tooltipTitle").innerHTML = format(ttdata)
         document.getElementById("tooltipMid").style.display = "inline"
 
@@ -943,7 +943,7 @@ frontierArray.sort((a, b) => a.data.tier - b.data.tier);
     if (category=="item") {
 
         document.getElementById("tooltipTop").style.display = "flex"
-        if (item[ttdata].type == "tm") document.getElementById("tooltipTop").innerHTML = `<img src="img/items/tm${format(move[item[ttdata].move].type)}.png">`
+        if (item[ttdata].type == "tm") document.getElementById("tooltipTop").innerHTML = `<img src="img/items/tm${formatEnglish(move[item[ttdata].move].type)}.png">`
         else if (item[ttdata].type == "memory") document.getElementById("tooltipTop").innerHTML = `<img src="img/items/${item[ttdata].image}Memory.png">`
         else if (item[ttdata].type == "decor") document.getElementById("tooltipTop").innerHTML = `<img src="img/decor/${ttdata}.png" style="scale:2">`
         else  document.getElementById("tooltipTop").innerHTML = `<img src="img/items/${ttdata}.png">`
@@ -1127,8 +1127,8 @@ frontierArray.sort((a, b) => a.data.tier - b.data.tier);
 
         if (pkmn[poke.id].shiny && pkmn[poke.id].shinyDisabled!=true) document.getElementById("pkmn-editor-sprite").src = `img/pkmn/shiny/${poke.id}.png` 
         else document.getElementById("pkmn-editor-sprite").src = `img/pkmn/sprite/${poke.id}.png`
-        document.getElementById("pkmn-editor-name").innerHTML = `<span id="pkmn-editor-nickname">${format(poke.id)}</span>${nameTag}`
-        if (pkmn[poke.id].shiny) document.getElementById("pkmn-editor-name").innerHTML = `<span id="pkmn-editor-nickname">${format(poke.id)}</span> <span style="color:#FF4671">✦</span>${nameTag}`
+        document.getElementById("pkmn-editor-name").innerHTML = `<span id="pkmn-editor-nickname" data-user-text>${format(poke.id)}</span>${nameTag}`
+        if (pkmn[poke.id].shiny) document.getElementById("pkmn-editor-name").innerHTML = `<span id="pkmn-editor-nickname" data-user-text>${format(poke.id)}</span> <span style="color:#FF4671">✦</span>${nameTag}`
         document.getElementById("pkmn-editor-level").innerHTML = `Level ${poke.level}`
         document.getElementById("pkmn-editor-type").innerHTML = returnPkmnTypes(poke.id)
 
@@ -1658,7 +1658,7 @@ const sortedMovepool = movepool
 
         document.getElementById("tooltipTop").style.display = `inline`
         document.getElementById("tooltipTitle").style.display = `inline`
-        document.getElementById("tooltipTop").innerHTML = `<img src="img/items/tm${format(move[ttdata].type)}.png">`
+        document.getElementById("tooltipTop").innerHTML = `<img src="img/items/tm${formatEnglish(move[ttdata].type)}.png">`
         document.getElementById("tooltipTitle").innerHTML = format(ttdata)
         document.getElementById("tooltipMid").style.display = "inline"
 
@@ -1815,7 +1815,7 @@ const sortedMovepool = movepool
         document.getElementById("tooltipTitle").innerHTML = format(ttdata)
         document.getElementById("tooltipMid").style.display = "inline"
 
-        if (item[ttdata].type == "tm") document.getElementById("tooltipTop").innerHTML = `<img src="img/items/tm${format(move[item[ttdata].move].type)}.png">`
+        if (item[ttdata].type == "tm") document.getElementById("tooltipTop").innerHTML = `<img src="img/items/tm${formatEnglish(move[item[ttdata].move].type)}.png">`
         else if (item[ttdata].type == "memory") document.getElementById("tooltipTop").innerHTML = `<img src="img/items/${item[ttdata].image}Memory.png">`
         else if (item[ttdata].type == "decor") document.getElementById("tooltipTop").innerHTML = `<img src="img/decor/${ttdata}.png" style="scale:2">`
         else  document.getElementById("tooltipTop").innerHTML = `<img src="img/items/${ttdata}.png">`

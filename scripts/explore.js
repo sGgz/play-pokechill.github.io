@@ -70,6 +70,10 @@ function voidAnimation(divName, animationName) {
 }
 
 function format(input) {
+    return window.PokeChillI18n?.name(input) || formatEnglish(input);
+}
+
+function formatEnglish(input) {
     let str = String(input);
     if (move[input]?.rename) str = String(move[input].rename);
     if (pkmn[input]?.rename) str = String(pkmn[input].rename);
@@ -656,7 +660,7 @@ function updateItemsGot(){
         divItem.dataset.item = i
 
         if (item[i].type !== "tm") divItem.innerHTML = `<img src="img/items/${i}.png"> <span>x${item[i].newItem}</span>`;
-        if (item[i].type == "tm") divItem.innerHTML = `<img src="img/items/tm${format(move[item[i].move].type)}.png"> <span>x${item[i].newItem}</span>`;
+        if (item[i].type == "tm") divItem.innerHTML = `<img src="img/items/tm${formatEnglish(move[item[i].move].type)}.png"> <span>x${item[i].newItem}</span>`;
 
 
         document.getElementById("explore-drops").appendChild(divItem);
@@ -1007,7 +1011,7 @@ function leaveCombat(){
         divItem.className = "area-end-item";
         divItem.dataset.item = i
         if (item[i].type !== "tm") divItem.innerHTML = `<img src="img/items/${i}.png"><span>+${item[i].newItem}</span>`;
-        if (item[i].type == "tm") divItem.innerHTML = `<img src="img/items/tm${format(move[item[i].move].type)}.png"><span>+${item[i].newItem}</span>`;
+        if (item[i].type == "tm") divItem.innerHTML = `<img src="img/items/tm${formatEnglish(move[item[i].move].type)}.png"><span>+${item[i].newItem}</span>`;
         document.getElementById("area-end-item-list").appendChild(divItem);
 
         item[i].newItem = 0;
@@ -4944,6 +4948,7 @@ document.getElementById("pokedex-sort-filter").addEventListener("change", e => {
 document.getElementById("pokedex-search").addEventListener("keydown", e => {
   if (e.key === "Enter") {
     let searchValue = document.getElementById("pokedex-search").value.trim()
+    searchValue = window.PokeChillI18n.searchTerms(searchValue)
     document.getElementById("pokedex-search").blur()
     
     if (searchValue === "") {
@@ -5268,7 +5273,13 @@ if (sort !== "default") {
 
 
 fusePkmn = new Fuse(sortedPokemon, {
-    keys: [ { name: 'name', getFn: obj => obj.id }, 'type', "level", `ability`, `hiddenAbility.id`, `eggMove.id`, `movepool`,'tagShiny','tagPokerus', "tagSignature"],
+    keys: [ { name: 'name', getFn: obj => [obj.id, format(obj.id)] },
+        { name: 'type', getFn: obj => [].concat(obj.type || []).flatMap(id => [id, format(id)]) },
+        { name: 'ability', getFn: obj => [].concat(obj.ability || []).flatMap(id => [id, format(id)]) },
+        { name: 'hiddenAbility.id', getFn: obj => obj.hiddenAbility?.id ? [obj.hiddenAbility.id, format(obj.hiddenAbility.id)] : [] },
+        { name: 'eggMove.id', getFn: obj => obj.eggMove?.id ? [obj.eggMove.id, format(obj.eggMove.id)] : [] },
+        { name: 'movepool', getFn: obj => [].concat(obj.movepool || []).flatMap(id => [id, format(id)]) },
+        "level", 'tagShiny','tagPokerus', "tagSignature"],
     threshold: 0.1,
     useExtendedSearch: true,
     ignoreLocation: true,
@@ -5895,7 +5906,7 @@ function tagMenuAssign(){
         
         div.style.color = i.color
         div.style.outlineColor = i.color
-        div.innerHTML = `${i.icon}${i.name}`
+        div.innerHTML = `${i.icon}<span data-user-text>${window.PokeChillI18n.escapeText(i.name)}</span>`
         document.getElementById(`tag-listing`).appendChild(div)
         
         div.addEventListener('click', (event) => {
@@ -5976,7 +5987,7 @@ function tagMenu(){
         div.style.color = i.color
         div.style.outlineColor = i.color
         const removeButton = `<svg class="tag-system-tag-remove" onclick="tagMenuRemove(${index})" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M12 4c-4.41 0-8 3.59-8 8s3.59 8 8 8s8-3.59 8-8s-3.59-8-8-8m5 11.59L15.59 17L12 13.41L8.41 17L7 15.59L10.59 12L7 8.41L8.41 7L12 10.59L15.59 7L17 8.41L13.41 12z" opacity="0.3"/><path fill="currentColor" d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10s10-4.47 10-10S17.53 2 12 2m0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8s8 3.59 8 8s-3.59 8-8 8m3.59-13L12 10.59L8.41 7L7 8.41L10.59 12L7 15.59L8.41 17L12 13.41L15.59 17L17 15.59L13.41 12L17 8.41z"/></svg>`
-        div.innerHTML = `${i.icon}${i.name}${removeButton}`
+        div.innerHTML = `${i.icon}<span data-user-text>${window.PokeChillI18n.escapeText(i.name)}</span>${removeButton}`
         document.getElementById(`tag-listing`).appendChild(div)
         
         // Add click event to toggle active/inactive
@@ -6172,7 +6183,7 @@ function tagMenuCreate(){
             tagsList.innerHTML = saved.tagSystemTags.map(tag => `
                 <div class="tag-system-tag" style="background-color: ${tag.color}">
                     ${tag.icon}
-                    <span>${tag.name}</span>
+                    <span data-user-text>${window.PokeChillI18n.escapeText(tag.name)}</span>
                 </div>
             `).join('');
         }
@@ -6600,7 +6611,7 @@ function updateItemBag(){
 
 
         div.dataset.item = i
-        if (item[i].type == "tm") div.innerHTML = `<img src="img/items/tm${format(move[item[i].move].type)}.png"> <span class="item-list-name">${format(i)} ${subtitle}<strong style="opacity:0.6; font-weight:200; white-space:nowrap; font-size:0.9rem; margin-left:0.2rem"> (${move[item[i].move].power} BP, ${format(move[item[i].move].split).slice(0, 3)})</strong> </span>  <span>x${item[i].got}</span>`
+        if (item[i].type == "tm") div.innerHTML = `<img src="img/items/tm${formatEnglish(move[item[i].move].type)}.png"> <span class="item-list-name">${format(i)} ${subtitle}<strong style="opacity:0.6; font-weight:200; white-space:nowrap; font-size:0.9rem; margin-left:0.2rem"> (${move[item[i].move].power} BP, ${format(move[item[i].move].split).slice(0, 3)})</strong> </span>  <span>x${item[i].got}</span>`
         else if (item[i].type == "memory") div.innerHTML = `<img src="img/items/${item[i].image}Memory.png"> <span class="item-list-name">${format(i)} ${subtitle}</span> <span>x${item[i].got}</span>`
         else if (item[i].type == "decor") div.innerHTML = `<img src="img/decor/${i}.png" style="scale:1; margin:0 -1rem"> <span class="item-list-name">${format(i)} ${subtitle}</span> <span>x${item[i].got}</span>`
         else div.innerHTML = `<img src="img/items/${i}.png"> <span class="item-list-name">${format(i)} ${subtitle}</span> <span>x${item[i].got}</span>`

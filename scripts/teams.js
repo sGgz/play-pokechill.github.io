@@ -266,7 +266,10 @@ function changeTeamNames(){
     for (const option of select.options) {
         for (const team in saved.previewTeams) {
             if (option.value !== team) continue
-            if (saved.previewTeams[team].name!==undefined) option.text = saved.previewTeams[team].name
+            if (saved.previewTeams[team].name!==undefined) {
+                option.setAttribute('data-user-text', '');
+                option.text = saved.previewTeams[team].name;
+            }
         }
     }
 
@@ -713,8 +716,8 @@ function setPkmnTeam(){
     let nickname = format(team[i].pkmn.id)
     if (pkmn[team[i].pkmn.id].nickname) nickname = pkmn[team[i].pkmn.id].nickname
 
-    let pkmnName = `${nickname} <span class="explore-pkmn-level" id="explore-${i}-lvl">lvl ${pkmn[team[i].pkmn.id].level}</span>`
-    if (pkmn[team[i].pkmn.id].shiny) pkmnName = `${nickname} <span style="color:#FF4671;">✦</span> <span class="explore-pkmn-level" id="explore-${i}-lvl">lvl ${pkmn[team[i].pkmn.id].level}</span>`
+    let pkmnName = `<span data-user-text>${window.PokeChillI18n.escapeText(nickname)}</span> <span class="explore-pkmn-level" id="explore-${i}-lvl">lvl ${pkmn[team[i].pkmn.id].level}</span>`
+    if (pkmn[team[i].pkmn.id].shiny) pkmnName = `<span data-user-text>${window.PokeChillI18n.escapeText(nickname)}</span> <span style="color:#FF4671;">✦</span> <span class="explore-pkmn-level" id="explore-${i}-lvl">lvl ${pkmn[team[i].pkmn.id].level}</span>`
 
 
     let pkmnSprite = `<img class="sprite-trim" src="img/pkmn/sprite/${team[i].pkmn.id}.png" id="explore-team-member-${i}-sprite">`
@@ -939,8 +942,8 @@ function updatePreviewTeam(){
             let nickname = format(currentTeam[i].pkmn)
             if (pkmn[currentTeam[i].pkmn].nickname) nickname = pkmn[currentTeam[i].pkmn].nickname
 
-            let pkmnName = `${nickname} ${nameTag} <span class="explore-pkmn-level" id="explore-${i}-lvl">lvl ${pkmn[ currentTeam[i].pkmn ].level}</span>`
-            if (pkmn[currentTeam[i].pkmn].shiny) pkmnName = `${nickname} ${nameTag} <span style="color:#FF4671;">✦</span> <span class="explore-pkmn-level" id="explore-${i}-lvl">lvl ${pkmn[ currentTeam[i].pkmn ].level}</span>`
+            let pkmnName = `<span data-user-text>${window.PokeChillI18n.escapeText(nickname)}</span> ${nameTag} <span class="explore-pkmn-level" id="explore-${i}-lvl">lvl ${pkmn[ currentTeam[i].pkmn ].level}</span>`
+            if (pkmn[currentTeam[i].pkmn].shiny) pkmnName = `<span data-user-text>${window.PokeChillI18n.escapeText(nickname)}</span> ${nameTag} <span style="color:#FF4671;">✦</span> <span class="explore-pkmn-level" id="explore-${i}-lvl">lvl ${pkmn[ currentTeam[i].pkmn ].level}</span>`
 
 
             let pkmnSprite = `<img class="sprite-trim" src="img/pkmn/sprite/${currentTeam[i].pkmn}.png" id="explore-team-member-${i}-sprite">`

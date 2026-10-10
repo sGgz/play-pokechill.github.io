@@ -7,7 +7,7 @@ import { hashPayload, type RemoteSave, type SavePayload } from '../cloud-save/pr
 
 const { JSDOM } = createRequire(import.meta.url)('jsdom');
 test('the actual checkbox change persists the selected value through busy-state rerenders', async () => {
-    const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://fixture.test' });
+    const dom = new JSDOM('<!doctype html><html><body><button id="menu-button" class="menu-button-open"></button><div id="menu-items"></div></body></html>', { url: 'https://fixture.test' });
     const originalFetch = globalThis.fetch;
     const globals = ['window', 'document', 'localStorage', 'indexedDB', 'navigator', 'setInterval'];
     const descriptors = globals.map(name => Object.getOwnPropertyDescriptor(globalThis, name));
@@ -36,6 +36,15 @@ test('the actual checkbox change persists the selected value through busy-state 
         const { CloudGame } = await import('../cloud-save/browser');
         const game = new CloudGame();
         await game.bootstrap(); game.started();
+        const panel = document.getElementById('pc-cloud') as HTMLDetailsElement;
+        assert.equal(panel.open, false);
+        const entry = document.getElementById('menu-item-cloud-save') as HTMLButtonElement;
+        entry.click();
+        assert.equal(panel.open, true);
+        assert.equal(document.getElementById('menu-button')?.classList.contains('menu-button-open'), false);
+        panel.open = false;
+        await new Promise(resolve => setTimeout(resolve, 20));
+        assert.equal(entry.getAttribute('aria-expanded'), 'false');
         const checkbox = document.getElementById('pc-cloud-auto') as HTMLInputElement;
         assert.equal(checkbox.disabled, false);
         for (const selected of [true, false]) {

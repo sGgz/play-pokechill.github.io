@@ -14,6 +14,7 @@ document.getElementById("dictionary-search").addEventListener("keydown", e => {
   if (e.key === "Enter") {
 
     let searchValue = document.getElementById("dictionary-search").value.trim()
+    searchValue = window.PokeChillI18n.searchTerms(searchValue)
     document.getElementById("dictionary-search").blur()
 
     if (searchValue == "SHOWMEYOURSECRETS") secretFight(areas.studioA.id)
@@ -188,9 +189,9 @@ function updateDictionary(){
 
 fuseDictionary = new Fuse(dictionaryItems, {
   keys: [ 
-    { name: 'name', getFn: obj => obj.id }, 
-    'type', 
-    'hiddenAbility.id', 
+    { name: 'name', getFn: obj => [obj.id, format(obj.id)] },
+    { name: 'type', getFn: obj => [].concat(obj.type || []).flatMap(id => [id, format(id)]) },
+    { name: 'hiddenAbility.id', getFn: obj => obj.hiddenAbility?.id ? [obj.hiddenAbility.id, format(obj.hiddenAbility.id)] : [] },
     'split', 
     'tagObtainedIn', 
     'tagCaught', 
