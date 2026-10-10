@@ -286,7 +286,19 @@ npm run cloud:check
 npm run cloud:login
 ```
 
-Wrangler 属于项目的开发依赖，部署电脑也需要安装；`--include=dev` 确保没有被生产依赖设置省略。它由 npm 脚本从 `node_modules\.bin` 加载，无需全局安装。若重装提示 `EPERM` 并指向 `esbuild.exe`，先关闭这个项目的本地开发或测试服务，再重试安装；不要直接把权限问题当成需要管理员运行。
+Wrangler 属于项目的开发依赖，部署电脑也需要安装；`--include=dev` 确保没有被生产依赖设置省略。它由 npm 脚本从 `node_modules\.bin` 加载，无需全局安装。
+
+若 `npm ci` 报 `EPERM` / `unlink` 并指向 `node_modules\@esbuild\win32-x64\esbuild.exe`，先关闭这个项目的开发或测试服务。中断测试后，Node 子进程及其 esbuild 服务也可能残留；在任务管理器“详细信息”中查看命令行，确认是本项目的测试进程或完整路径指向本项目的 esbuild，再结束对应进程，重试安装。不要批量结束其他项目的 Node 进程，也不要直接当成需要管理员权限。
+
+`EBADENGINE` 显示 Node 25 是独立的版本警告，不是文件占用的证据。若本机已有 `D:\tools\node24`，在**自己的 Git Bash 窗口**执行：
+
+```bash
+export PATH=/d/tools/node24:$PATH
+node --version
+npm ci
+```
+
+确认版本输出为 `v24.x`。`export` 仅对当前终端生效，重新打开终端需要再次执行；另一窗口或 Codex 里选择 Node 24 不会改变你当前窗口的版本。依赖安装成功后继续部署步骤，无需反复重装。
 
 | 提示或现象 | 处理方法 |
 | --- | --- |
